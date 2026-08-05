@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Flutter / Dart
+.dart_tool/
+.packages
+build/
+# nota: pubspec.lock queda a criterio del .gitignore de flutter_app (por defecto ignorado)
+
+# Entorno
+.env
+.env.local
+
+# Tooling local del autor (no parte del portfolio)
+.atl/
+.sisyphus/

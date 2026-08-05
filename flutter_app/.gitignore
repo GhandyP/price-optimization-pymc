@@ -1,0 +1,8 @@
+# Environment variables
+.env
+
+# Flutter/Dart
+.dart_tool/
+.packages
+build/
+*.lock
