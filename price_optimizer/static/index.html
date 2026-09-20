@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Optimización de Precios · PyMC</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="page-header">
+      <h1>Optimización de Precios · PyMC</h1>
+      <p>Estima la elasticidad de la demanda y encuentra el precio que maximiza los ingresos.</p>
+    </header>
+    <div class="columns">
+      <form id="optimisation-form" class="card form-panel">
+        <label for="observations">Datos históricos (precio, ventas)</label>
+        <textarea id="observations" rows="10" required>10, 100
+12, 90
+15, 80
+18, 70
+20, 65
+22, 60
+25, 50
+28, 45
+30, 40
+35, 30</textarea>
+        <small>Una observación por línea. Ejemplo: 10, 100</small>
+        <label for="price-grid">Grid de precios (opcional)</label>
+        <input id="price-grid" type="text" placeholder="Vacío: 100 puntos entre mínimo y máximo">
+        <small>Separá los precios con comas o espacios; mínimo 5 valores.</small>
+        <label for="model-type">Modelo de demanda</label>
+        <select id="model-type">
+          <option value="linear">Lineal</option>
+          <option value="polynomial">Polinómico</option>
+        </select>
+        <div id="degree-field" class="hidden">
+          <label for="degree">Grado polinómico</label>
+          <input id="degree" type="number" min="1" max="5" value="2">
+        </div>
+        <div class="form-grid">
+          <label for="draws">Iteraciones (draws)<input id="draws" type="number" min="500" max="10000" value="2000"></label>
+          <label for="tune">Calentamiento (tune)<input id="tune" type="number" min="200" max="10000" value="1000"></label>
+          <label for="target-accept">Target accept<input id="target-accept" type="number" min="0.5" max="0.99" step="0.01" value="0.9"></label>
+        </div>
+        <button id="submit-button" type="submit">Optimizar precio</button>
+        <p id="loading-state" class="loading hidden" aria-live="polite">Calculando…</p>
+      </form>
+      <section id="results-panel" class="card results-panel" aria-live="polite">
+        <div id="empty-state" class="empty-state">Todavía no hay resultados…</div>
+        <div id="error-banner" class="error-banner hidden" role="alert" aria-live="polite"></div>
+        <div id="results-content" class="hidden">
+          <p id="model-summary" class="model-summary"></p>
+          <div id="kpis" class="kpis"></div>
+          <div id="chart-container" class="chart-container"></div>
+          <h2>Parámetros posteriores</h2>
+          <div id="parameters-table"></div>
+          <h2>Ingresos por precio</h2>
+          <div id="results-table" class="table-scroll"></div>
+        </div>
+      </section>
+    </div>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

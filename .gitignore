@@ -7,12 +7,8 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-
-# Flutter / Dart
-.dart_tool/
-.packages
 build/
-# nota: pubspec.lock queda a criterio del .gitignore de flutter_app (por defecto ignorado)
+dist/
 
 # Entorno
 .env
@@ -21,3 +17,4 @@ build/
 # Tooling local del autor (no parte del portfolio)
 .atl/
 .sisyphus/
+.codegraph/

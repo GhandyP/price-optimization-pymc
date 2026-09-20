@@ -2,15 +2,9 @@
 
 from __future__ import annotations
 
-import base64
-import io
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Iterable, Mapping, Sequence
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pymc as pm
@@ -26,10 +20,13 @@ class PriceOptimizationResult:
     optimal_price: float
     optimal_expected_revenue: float
     parameter_means: dict[str, float]
-    revenue_plot_base64: str
     raw_trace: dict
     model_type: str = "linear"
     degree: int = 2
+
+
+def _posterior_samples(trace, parameter: str) -> np.ndarray:
+    return np.asarray(trace.posterior[parameter].values, dtype=float).reshape(-1)
 
 
 def run_price_optimization(
@@ -52,7 +49,6 @@ def run_price_optimization(
     """
 
     df = _coerce_dataframe(observations)
-
     prices = df["precio"].to_numpy(dtype=float)
     sales = df["ventas"].to_numpy(dtype=float)
 
@@ -65,7 +61,7 @@ def run_price_optimization(
             f"degree ({degree}) debe ser menor al número de observaciones ({len(df)}) para evitar sobreajuste."
         )
 
-    with pm.Model() as model:
+    with pm.Model():
         intercepto = pm.Normal("intercepto", mu=float(sales.max()), sigma=max(float(sales.std()), 10.0))
 
         if model_type == "linear":
@@ -78,22 +74,18 @@ def run_price_optimization(
             mu_ventas = intercepto + sum(beta * prices**k for k, beta in enumerate(betas, start=1))
 
         pm.Normal("ventas_observadas", mu=mu_ventas, sigma=sigma_ventas, observed=sales)
-
-        trace = pm.sample(
-            draws=draws,
-            tune=tune,
-            target_accept=target_accept,
-            progressbar=False,
-            return_inferencedata=False,
-        )
+        trace = pm.sample(draws=draws, tune=tune, target_accept=target_accept, progressbar=False)
 
     price_grid_np = _build_price_grid(price_grid, prices)
+    intercepto_samples = _posterior_samples(trace, "intercepto")
     if model_type == "linear":
-        expected_sales = (trace["intercepto"][:, None] + trace["pendiente"][:, None] * price_grid_np).mean(axis=0)
+        expected_sales = (
+            intercepto_samples[:, None] + _posterior_samples(trace, "pendiente")[:, None] * price_grid_np
+        ).mean(axis=0)
     else:
         expected_sales = (
-            trace["intercepto"][:, None]
-            + sum(trace[f"beta_{k}"][:, None] * price_grid_np**k for k in range(1, degree + 1))
+            intercepto_samples[:, None]
+            + sum(_posterior_samples(trace, f"beta_{k}")[:, None] * price_grid_np**k for k in range(1, degree + 1))
         ).mean(axis=0)
     expected_revenue = price_grid_np * expected_sales
 
@@ -101,38 +93,14 @@ def run_price_optimization(
     optimal_price = float(price_grid_np[optimal_index])
     optimal_expected_revenue = float(expected_revenue[optimal_index])
 
+    parameter_names = ["intercepto"]
     if model_type == "linear":
-        parameter_means = {
-            "intercepto": float(trace["intercepto"].mean()),
-            "pendiente": float(trace["pendiente"].mean()),
-            "sigma_ventas": float(trace["sigma_ventas"].mean()),
-        }
+        parameter_names.append("pendiente")
     else:
-        parameter_means = {"intercepto": float(trace["intercepto"].mean())}
-        for k in range(1, degree + 1):
-            parameter_means[f"beta_{k}"] = float(trace[f"beta_{k}"].mean())
-        parameter_means["sigma_ventas"] = float(trace["sigma_ventas"].mean())
-
-    revenue_plot_base64 = _encode_plot(
-        price_grid_np,
-        expected_revenue,
-        observed_prices=prices,
-        observed_revenue=prices * sales,
-        optimal_price=optimal_price,
-        optimal_revenue=optimal_expected_revenue,
-    )
-
-    if model_type == "linear":
-        raw_trace = {
-            "intercepto": trace["intercepto"].tolist(),
-            "pendiente": trace["pendiente"].tolist(),
-            "sigma_ventas": trace["sigma_ventas"].tolist(),
-        }
-    else:
-        raw_trace = {"intercepto": trace["intercepto"].tolist()}
-        for k in range(1, degree + 1):
-            raw_trace[f"beta_{k}"] = trace[f"beta_{k}"].tolist()
-        raw_trace["sigma_ventas"] = trace["sigma_ventas"].tolist()
+        parameter_names.extend(f"beta_{k}" for k in range(1, degree + 1))
+    parameter_names.append("sigma_ventas")
+    parameter_means = {name: float(_posterior_samples(trace, name).mean()) for name in parameter_names}
+    raw_trace = {name: _posterior_samples(trace, name).tolist() for name in parameter_names}
 
     return PriceOptimizationResult(
         price_grid=price_grid_np.tolist(),
@@ -141,7 +109,6 @@ def run_price_optimization(
         optimal_price=optimal_price,
         optimal_expected_revenue=optimal_expected_revenue,
         parameter_means=parameter_means,
-        revenue_plot_base64=revenue_plot_base64,
         raw_trace=raw_trace,
         model_type=model_type,
         degree=degree,
@@ -180,39 +147,3 @@ def _build_price_grid(grid: Sequence[float] | None, prices: np.ndarray) -> np.nd
     if np.isclose(min_price, max_price):
         max_price = min_price + 1.0
     return np.linspace(min_price, max_price, num=100)
-
-
-def _encode_plot(
-    price_grid: np.ndarray,
-    expected_revenue: np.ndarray,
-    *,
-    observed_prices: np.ndarray,
-    observed_revenue: np.ndarray,
-    optimal_price: float,
-    optimal_revenue: float,
-) -> str:
-    fig, ax = plt.subplots(figsize=(7, 5))
-    ax.plot(price_grid, expected_revenue, label="Ingresos esperados", color="steelblue")
-    ax.scatter(observed_prices, observed_revenue, color="seagreen", alpha=0.6, label="Datos observados")
-    ax.axvline(optimal_price, color="firebrick", linestyle="dashed", label=f"Precio óptimo = {optimal_price:.2f}")
-    ax.set_title("Ingresos esperados por precio")
-    ax.set_xlabel("Precio")
-    ax.set_ylabel("Ingresos")
-    ax.legend()
-
-    buffer = io.BytesIO()
-    fig.tight_layout()
-    fig.savefig(buffer, format="png")
-    plt.close(fig)
-    buffer.seek(0)
-    return base64.b64encode(buffer.read()).decode("ascii")
-
-
-if __name__ == "__main__":
-    sample_data = [
-        {"precio": 10, "ventas": 100},
-        {"precio": 15, "ventas": 80},
-        {"precio": 20, "ventas": 65},
-    ]
-    result = run_price_optimization(sample_data)
-    print("Precio óptimo:", result.optimal_price)
