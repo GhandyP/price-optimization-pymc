@@ -155,6 +155,7 @@ precios y se toma el `argmax` de `precio · ventas_esperadas`.
 
 - Los umbrales de convergencia son convenciones elegidas: R-hat máximo `1.01` y ESS mínimo `100`.
 - El intervalo mostrado es un HDI del 90%, no una garantía frecuentista de cobertura.
+- Si no se pueden calcular los intervalos o los diagnósticos de convergencia, la respuesta lo informa y el resto del resultado sigue siendo válido.
 - Las ventas esperadas negativas se recortan a cero antes de calcular ingresos.
 - `intercepto` significa ventas esperadas al precio promedio observado.
 - El muestreo usa cuatro cadenas, por lo que cada request cuesta aproximadamente el doble de CPU que

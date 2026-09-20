@@ -169,6 +169,48 @@ def test_single_chain_diagnostics_are_none_and_strict_json_safe(sample_observati
     assert json.loads(serialized) == diagnostics
 
 
+def test_hdi_failure_keeps_result_and_clears_intervals(sample_observations, patch_sample, monkeypatch):
+    patch_sample()
+    price_grid = [9, 10, 11, 12, 13, 14]
+    baseline = optimizer.run_price_optimization(sample_observations, price_grid=price_grid, draws=10, tune=10)
+
+    def fail_hdi(*args, **kwargs):
+        raise RuntimeError("synthetic HDI failure")
+
+    monkeypatch.setattr(optimizer.az, "hdi", fail_hdi)
+    result = optimizer.run_price_optimization(sample_observations, price_grid=price_grid, draws=10, tune=10)
+
+    assert result.price_grid == baseline.price_grid
+    assert result.expected_sales == baseline.expected_sales
+    assert result.expected_revenue == baseline.expected_revenue
+    assert result.optimal_price == baseline.optimal_price
+    assert result.optimal_expected_revenue == baseline.optimal_expected_revenue
+    assert result.expected_sales_hdi_low == []
+    assert result.expected_sales_hdi_high == []
+    assert result.expected_revenue_hdi_low == []
+    assert result.expected_revenue_hdi_high == []
+    assert "No se pudieron calcular los intervalos de incertidumbre." in result.warnings
+
+
+def test_diagnostics_failure_keeps_result_and_returns_empty_diagnostics(sample_observations, patch_sample, monkeypatch):
+    patch_sample()
+    baseline = optimizer.run_price_optimization(sample_observations, price_grid=[9, 10, 11, 12, 13, 14], draws=10, tune=10)
+
+    def fail_rhat(*args, **kwargs):
+        raise RuntimeError("synthetic diagnostics failure")
+
+    monkeypatch.setattr(optimizer.az, "rhat", fail_rhat)
+    result = optimizer.run_price_optimization(sample_observations, price_grid=[9, 10, 11, 12, 13, 14], draws=10, tune=10)
+
+    assert result.diagnostics == {}
+    assert result.price_grid == baseline.price_grid
+    assert result.expected_sales == baseline.expected_sales
+    assert result.expected_revenue == baseline.expected_revenue
+    assert result.optimal_price == baseline.optimal_price
+    assert result.optimal_expected_revenue == baseline.optimal_expected_revenue
+    assert "No se pudo evaluar la convergencia." in result.warnings
+
+
 def test_hdi_matches_independent_one_dimensional_grid_columns(sample_observations, patch_sample):
     rng = np.random.default_rng(0)
     well_behaved_trace = az.from_dict(
