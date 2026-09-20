@@ -63,7 +63,7 @@ aprobado del linaje `review-11e8f9041397401b`.
 - [x] **T6** **C4** `docs:` captura y sección «Cómo se ve» en el README.
 - [x] **T7** Verificación independiente (`gentle-ai-verify`): validez del YAML, referencias de acción,
   espejo entre los comandos del workflow y los documentados, y las afirmaciones del README.
-- [ ] **T8** Review nativo RDD del delta `C1..HEAD`.
+- [x] **T8** Review nativo RDD del delta `C1..HEAD`.
 - [ ] **T9** Reporte final y **decisión de push** (turno del usuario).
 
 **Superficies de escritura:** `.github/workflows/ci.yml`, `docs/**`, `README.md`,
@@ -119,6 +119,30 @@ GitHub que `setup-uv@v10.0.1` es una release inmutable.
 | F3 | Baja | Con ingresos chicos (pico 3) las marcas del eje Y se redondeaban y se duplicaban: `4 / 3 / 2 / 2 / 1 / 0` | Los decimales ahora se derivan del paso de la escala |
 | F4 | Info | El CI corre seis comandos y el README documentaba cuatro | Se aclara que el CI corre esos cuatro más el sync y el guard |
 
+## Review nativo del delta
+
+El primer intento cubrió todo lo que se publicaría (`07e6882..HEAD`) y el provider lo rechazó con
+`lens_context_budget_exceeded`: la evidencia completa del candidato no entra en el presupuesto de
+contexto de la lente, y no se creó autoridad ni se mutó nada. El provider prescribe revisar el cambio
+como candidatos más chicos, así que el review se hizo sobre el **delta** a partir de C1 (`90da488`),
+cuyo código ya está cubierto por el linaje aprobado y quemado `review-11e8f9041397401b`.
+
+- **Linaje**: `review-42dad0280cff365e` · **tier**: high, por el shell en `.github/workflows/ci.yml` ·
+  **9 archivos**, 290 líneas, presupuesto de corrección 145.
+- **Lentes**: las cuatro completas —riesgo, resiliencia, legibilidad y fiabilidad— ejecutadas por relay
+  del host: 4 pronosticadas y 4 enviadas, con resultados de 559 a 1082 bytes cada una.
+- **Resultado**: approved, sin hallazgos bloqueantes. Autoridad quemada con
+  `gentle-ai.review-acknowledged/v1`; la entrega queda bajo la política ordinaria del repositorio.
+- **Hallazgo informativo**: `R2-001` (lente de legibilidad, `odd/tasks/publish-and-protect.md:23-28`,
+  WARNING). El cierre deja explícito que no es bloqueante, que no reabre el review y que se trata como
+  trabajo posterior; se anota acá para no perderlo.
+- **Alcance del recibo**: cubre el árbol de `19ed1ea`. Este commit de documentación es posterior y es
+  una edición pasiva de documentación, el caso que el contrato exceptúa de un review nuevo.
+- **Incidente operativo, sin consecuencias**: la primera captura grupal fue rechazada
+  (`capture-group-rejected`) por un error de transcripción en el `subject-hash` de la lente de
+  fiabilidad; no hubo mutación ni quema. STATUS reofreció los mismos slots y la captura corregida cerró
+  el review.
+
 ## Cierre
 
 - **Commits**: `90da488` migración, `3361145` CI, `9aa2a3d` gráfico y favicon, más el commit `docs:` con
@@ -128,5 +152,5 @@ GitHub que `setup-uv@v10.0.1` es una release inmutable.
   deseleccionado, `uv run pytest -q -m integration` = 1 pasado con el sampler real, y
   `node --check price_optimizer/static/app.js` OK.
 - **Captura**: `docs/screenshot.png`, 1280×1206 (2×), con inferencia real y precio óptimo 22,37.
-- **Pendiente**: la verificación independiente del workflow y el review nativo del delta (T7 y T8), y la
-  decisión de push del usuario (T9). El push **no** se ejecuta sin pedido explícito.
+- **Pendiente**: solo la decisión de push del usuario (T9). El push **no** se ejecuta sin pedido
+  explícito.
