@@ -39,7 +39,7 @@ app = FastAPI(
 
 def _json_safe(value):
     if isinstance(value, float) and not math.isfinite(value):
-        return str(value)
+        return None
     if isinstance(value, BaseException):
         return str(value)
     if isinstance(value, dict):
@@ -145,7 +145,7 @@ async def optimise(request: PriceOptimisationRequest) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return {
+    return _json_safe({
         "price_grid": result.price_grid,
         "expected_sales": result.expected_sales,
         "expected_revenue": result.expected_revenue,
@@ -154,4 +154,10 @@ async def optimise(request: PriceOptimisationRequest) -> dict:
         "parameter_means": result.parameter_means,
         "model_type": result.model_type,
         "degree": result.degree,
-    }
+        "expected_sales_hdi_low": result.expected_sales_hdi_low,
+        "expected_sales_hdi_high": result.expected_sales_hdi_high,
+        "expected_revenue_hdi_low": result.expected_revenue_hdi_low,
+        "expected_revenue_hdi_high": result.expected_revenue_hdi_high,
+        "diagnostics": result.diagnostics,
+        "warnings": result.warnings,
+    })

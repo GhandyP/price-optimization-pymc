@@ -23,6 +23,18 @@ def result() -> PriceOptimizationResult:
         optimal_expected_revenue=1225.0,
         parameter_means={"intercepto": 120.0, "pendiente": -3.0, "sigma_ventas": 4.0},
         raw_trace={},
+        expected_sales_hdi_low=[90.0, 82.0, 74.0, 64.0, 54.0],
+        expected_sales_hdi_high=[110.0, 98.0, 86.0, 76.0, 66.0],
+        expected_revenue_hdi_low=[900.0, 1025.0, 1100.0, 1125.0, 1100.0],
+        expected_revenue_hdi_high=[1100.0, 1225.0, 1300.0, 1325.0, 1300.0],
+        diagnostics={
+            "rhat": {"intercepto": 1.0},
+            "ess": {"intercepto": 200.0},
+            "max_rhat": 1.0,
+            "min_ess": 200.0,
+            "converged": True,
+        },
+        warnings=["example warning"],
     )
 
 
@@ -47,8 +59,62 @@ def test_optimise_returns_result_without_plot(monkeypatch):
         "parameter_means",
         "model_type",
         "degree",
+        "expected_sales_hdi_low",
+        "expected_sales_hdi_high",
+        "expected_revenue_hdi_low",
+        "expected_revenue_hdi_high",
+        "diagnostics",
+        "warnings",
     }
+    for field in (
+        "expected_sales_hdi_low",
+        "expected_sales_hdi_high",
+        "expected_revenue_hdi_low",
+        "expected_revenue_hdi_high",
+    ):
+        assert len(payload[field]) == len(payload["price_grid"])
+        assert isinstance(payload[field], list)
+        assert all(isinstance(value, (int, float)) for value in payload[field])
+    assert set(payload["diagnostics"]) == {"rhat", "ess", "max_rhat", "min_ess", "converged"}
+    assert isinstance(payload["diagnostics"], dict)
+    assert isinstance(payload["warnings"], list)
+    assert all(isinstance(warning, str) for warning in payload["warnings"])
     assert "revenue_plot_base64" not in payload
+
+
+def test_optimise_serializes_none_diagnostics_as_json_null_without_nan(monkeypatch):
+    response_result = result()
+    response_result.diagnostics = {
+        "rhat": {"intercepto": None},
+        "ess": {"intercepto": None},
+        "max_rhat": None,
+        "min_ess": None,
+        "converged": False,
+    }
+    monkeypatch.setattr(api, "run_price_optimization", lambda *args, **kwargs: response_result)
+
+    response = client.post("/optimise", json={"observations": OBSERVATIONS})
+
+    assert response.status_code == 200
+    assert response.json()["diagnostics"] == {
+        "rhat": {"intercepto": None},
+        "ess": {"intercepto": None},
+        "max_rhat": None,
+        "min_ess": None,
+        "converged": False,
+    }
+    assert "NaN" not in response.text
+    assert "Infinity" not in response.text
+
+
+def test_optimise_response_is_strict_json(monkeypatch):
+    monkeypatch.setattr(api, "run_price_optimization", lambda *args, **kwargs: result())
+    response = client.post("/optimise", json={"observations": OBSERVATIONS})
+
+    def reject_constant(value):
+        raise AssertionError(f"invalid JSON constant: {value}")
+
+    json.loads(response.text, parse_constant=reject_constant)
 
 
 def test_optimise_forwards_request_parameters(monkeypatch):
