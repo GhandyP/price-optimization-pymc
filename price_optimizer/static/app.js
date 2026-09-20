@@ -110,9 +110,11 @@
     var description = createSvg("desc", { id: "chart-description" }); description.textContent = "Curva de ingresos esperados, observaciones y precio óptimo."; svg.appendChild(description);
     var left = 65, right = 690, top = 28, bottom = 345;
     var prices = data.price_grid, revenues = data.expected_revenue;
-    var revenueLow = data.expected_revenue_hdi_low, revenueHigh = data.expected_revenue_hdi_high;
+    var hasRevenueBand = Array.isArray(data.expected_revenue_hdi_low) && Array.isArray(data.expected_revenue_hdi_high) &&
+      data.expected_revenue_hdi_low.length === prices.length && data.expected_revenue_hdi_high.length === prices.length;
+    var revenueLow = hasRevenueBand ? data.expected_revenue_hdi_low : [], revenueHigh = hasRevenueBand ? data.expected_revenue_hdi_high : [];
     var minPrice = Math.min.apply(null, prices), maxPrice = Math.max.apply(null, prices);
-    var maxRevenue = Math.max.apply(null, revenues.concat(revenueHigh, observations.map(function (o) { return o.precio * o.ventas; })));
+    var maxRevenue = Math.max.apply(null, revenues.concat(hasRevenueBand ? revenueHigh : [], observations.map(function (o) { return o.precio * o.ventas; })));
     var targetStep = maxRevenue > 0 ? maxRevenue * 1.05 / 5 : 0;
     var niceStep = 1;
     if (targetStep > 0) {
@@ -133,12 +135,14 @@
     }
     svg.appendChild(createSvg("line", { x1: left, y1: bottom, x2: right, y2: bottom, class: "axis" }));
     svg.appendChild(createSvg("line", { x1: left, y1: top, x2: left, y2: bottom, class: "axis" }));
-    var bandPoints = prices.map(function (price, index) { return x(price) + "," + y(revenueHigh[index]); })
-      .concat(prices.slice().reverse().map(function (price, reverseIndex) {
-        var index = prices.length - 1 - reverseIndex;
-        return x(price) + "," + y(revenueLow[index]);
-      })).join(" ");
-    svg.appendChild(createSvg("polygon", { points: bandPoints, class: "revenue-band" }));
+    if (hasRevenueBand) {
+      var bandPoints = prices.map(function (price, index) { return x(price) + "," + y(revenueHigh[index]); })
+        .concat(prices.slice().reverse().map(function (price, reverseIndex) {
+          var index = prices.length - 1 - reverseIndex;
+          return x(price) + "," + y(revenueLow[index]);
+        })).join(" ");
+      svg.appendChild(createSvg("polygon", { points: bandPoints, class: "revenue-band" }));
+    }
     var points = prices.map(function (price, index) { return x(price) + "," + y(revenues[index]); }).join(" ");
     svg.appendChild(createSvg("polyline", { points: points, class: "revenue-line", fill: "none" }));
     observations.forEach(function (observation) {
@@ -161,9 +165,11 @@
     emptyState.classList.add("hidden"); errorBanner.classList.add("hidden"); resultsContent.classList.remove("hidden");
     modelSummary.textContent = "Modelo: " + (data.model_type === "polynomial" ? "Polinómico (grado " + data.degree + ")" : "Lineal");
     var diagnostics = data.diagnostics || {};
-    var convergenceText = "Convergencia: R-hat máx " + format(diagnostics.max_rhat, 3) + " · ESS mín " + format(diagnostics.min_ess, 0);
+    var diagnosticFields = ["rhat", "ess", "max_rhat", "min_ess", "converged"];
+    var diagnosticsAvailable = diagnosticFields.every(function (field) { return Object.prototype.hasOwnProperty.call(diagnostics, field); });
+    var convergenceText = diagnosticsAvailable ? "Convergencia: R-hat máx " + format(diagnostics.max_rhat, 3) + " · ESS mín " + format(diagnostics.min_ess, 0) : "Convergencia: no disponible";
     convergenceBanner.textContent = convergenceText;
-    convergenceBanner.classList.toggle("warning", !diagnostics.converged);
+    convergenceBanner.classList.toggle("warning", diagnosticsAvailable && !diagnostics.converged);
     warningsBanner.innerHTML = data.warnings && data.warnings.length ? "<ul>" + data.warnings.map(function (warning) { return "<li>" + warning + "</li>"; }).join("") + "</ul>" : "";
     warningsBanner.classList.toggle("hidden", !data.warnings || !data.warnings.length);
     kpis.innerHTML = "<div class=\"kpi\"><span class=\"kpi-label\">Precio óptimo</span><span class=\"kpi-value\">$" + format(data.optimal_price) + "</span></div>" +

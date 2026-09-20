@@ -41,6 +41,8 @@ def test_javascript_consumes_uncertainty_diagnostics_and_warnings():
     javascript = (STATIC_DIR / "app.js").read_text()
     for field in ("expected_revenue_hdi_low", "expected_revenue_hdi_high", "diagnostics", "warnings"):
         assert field in javascript
+    assert "length === prices.length" in javascript
+    assert "Convergencia: no disponible" in javascript
 
 
 def test_static_assets_do_not_reference_external_hosts():

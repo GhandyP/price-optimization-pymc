@@ -133,28 +133,36 @@ def run_price_optimization(
     expected_sales = draw_sales.mean(axis=(0, 1))
     draw_revenue = price_grid_np[None, None, :] * draw_sales
     expected_revenue = draw_revenue.mean(axis=(0, 1))
-    sales_samples = xr.DataArray(draw_sales, dims=("chain", "draw", "grid"))
-    revenue_samples = xr.DataArray(draw_revenue, dims=("chain", "draw", "grid"))
-    sales_hdi = az.hdi(sales_samples, hdi_prob=HDI_PROB).to_array().values[0]
-    revenue_hdi = az.hdi(revenue_samples, hdi_prob=HDI_PROB).to_array().values[0]
+    sales_hdi = revenue_hdi = None
+    try:
+        sales_samples = xr.DataArray(draw_sales, dims=("chain", "draw", "grid"))
+        revenue_samples = xr.DataArray(draw_revenue, dims=("chain", "draw", "grid"))
+        sales_hdi = az.hdi(sales_samples, hdi_prob=HDI_PROB).to_array().values[0]
+        revenue_hdi = az.hdi(revenue_samples, hdi_prob=HDI_PROB).to_array().values[0]
+    except Exception:  # noqa: BLE001 - interval failures must not discard valid results
+        sales_hdi = revenue_hdi = None
 
-    rhat_dataset = az.rhat(trace)
-    ess_dataset = az.ess(trace)
-    rhat = {name: _finite_or_none(float(rhat_dataset[name].values)) for name in parameter_names_from_trace(trace)}
-    ess = {name: _finite_or_none(float(ess_dataset[name].values)) for name in parameter_names_from_trace(trace)}
-    max_rhat = max((value for value in rhat.values() if value is not None), default=None)
-    min_ess = min((value for value in ess.values() if value is not None), default=None)
-    converged = (
-        all(value is not None and value <= MAX_RHAT for value in rhat.values())
-        and all(value is not None and value >= MIN_ESS for value in ess.values())
-    )
-    diagnostics = {
-        "rhat": rhat,
-        "ess": ess,
-        "max_rhat": max_rhat,
-        "min_ess": min_ess,
-        "converged": converged,
-    }
+    diagnostics = {}
+    try:
+        rhat_dataset = az.rhat(trace)
+        ess_dataset = az.ess(trace)
+        rhat = {name: _finite_or_none(float(rhat_dataset[name].values)) for name in parameter_names_from_trace(trace)}
+        ess = {name: _finite_or_none(float(ess_dataset[name].values)) for name in parameter_names_from_trace(trace)}
+        max_rhat = max((value for value in rhat.values() if value is not None), default=None)
+        min_ess = min((value for value in ess.values() if value is not None), default=None)
+        converged = (
+            all(value is not None and value <= MAX_RHAT for value in rhat.values())
+            and all(value is not None and value >= MIN_ESS for value in ess.values())
+        )
+        diagnostics = {
+            "rhat": rhat,
+            "ess": ess,
+            "max_rhat": max_rhat,
+            "min_ess": min_ess,
+            "converged": converged,
+        }
+    except Exception:  # noqa: BLE001 - diagnostic failures must not discard valid results
+        diagnostics = {}
 
     optimal_index = int(np.argmax(expected_revenue))
     optimal_price = float(price_grid_np[optimal_index])
@@ -174,11 +182,15 @@ def run_price_optimization(
         warnings.append("El precio óptimo cayó en el borde del grid: podría existir un óptimo mayor fuera del rango evaluado.")
     if clipped_points:
         warnings.append(f"Se recortaron ventas esperadas negativas en {clipped_points} punto(s) del grid.")
-    if any(value is None for value in rhat.values()):
+    if sales_hdi is None or revenue_hdi is None:
+        warnings.append("No se pudieron calcular los intervalos de incertidumbre.")
+    if not diagnostics:
+        warnings.append("No se pudo evaluar la convergencia.")
+    elif any(value is None for value in rhat.values()):
         warnings.append("No se pudo evaluar R-hat (se necesitan al menos 2 cadenas).")
     elif max_rhat > MAX_RHAT:
         warnings.append(f"No convergió: R-hat máximo {max_rhat:.3f} (umbral 1.01). Subí draws/tune o target_accept.")
-    if min_ess is not None and min_ess < MIN_ESS:
+    if diagnostics and min_ess is not None and min_ess < MIN_ESS:
         warnings.append(f"Pocas muestras efectivas: ESS mínimo {min_ess:.0f} (umbral 100).")
 
     return PriceOptimizationResult(
@@ -191,10 +203,10 @@ def run_price_optimization(
         raw_trace=raw_trace,
         model_type=model_type,
         degree=degree,
-        expected_sales_hdi_low=sales_hdi[:, 0].tolist(),
-        expected_sales_hdi_high=sales_hdi[:, 1].tolist(),
-        expected_revenue_hdi_low=revenue_hdi[:, 0].tolist(),
-        expected_revenue_hdi_high=revenue_hdi[:, 1].tolist(),
+        expected_sales_hdi_low=[] if sales_hdi is None else sales_hdi[:, 0].tolist(),
+        expected_sales_hdi_high=[] if sales_hdi is None else sales_hdi[:, 1].tolist(),
+        expected_revenue_hdi_low=[] if revenue_hdi is None else revenue_hdi[:, 0].tolist(),
+        expected_revenue_hdi_high=[] if revenue_hdi is None else revenue_hdi[:, 1].tolist(),
         diagnostics=diagnostics,
         warnings=warnings,
     )
