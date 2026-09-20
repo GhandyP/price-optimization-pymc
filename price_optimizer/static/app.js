@@ -14,6 +14,8 @@
   var resultsContent = document.getElementById("results-content");
   var modelSummary = document.getElementById("model-summary");
   var kpis = document.getElementById("kpis");
+  var convergenceBanner = document.getElementById("convergence-banner");
+  var warningsBanner = document.getElementById("warnings-banner");
   var chartContainer = document.getElementById("chart-container");
   var parametersTable = document.getElementById("parameters-table");
   var resultsTable = document.getElementById("results-table");
@@ -77,6 +79,7 @@
   }
 
   function format(value, digits) {
+    if (value === null || value === undefined) return "—";
     return Number(value).toLocaleString("es-AR", { maximumFractionDigits: digits === undefined ? 2 : digits });
   }
 
@@ -107,8 +110,9 @@
     var description = createSvg("desc", { id: "chart-description" }); description.textContent = "Curva de ingresos esperados, observaciones y precio óptimo."; svg.appendChild(description);
     var left = 65, right = 690, top = 28, bottom = 345;
     var prices = data.price_grid, revenues = data.expected_revenue;
+    var revenueLow = data.expected_revenue_hdi_low, revenueHigh = data.expected_revenue_hdi_high;
     var minPrice = Math.min.apply(null, prices), maxPrice = Math.max.apply(null, prices);
-    var maxRevenue = Math.max.apply(null, revenues.concat(observations.map(function (o) { return o.precio * o.ventas; })));
+    var maxRevenue = Math.max.apply(null, revenues.concat(revenueHigh, observations.map(function (o) { return o.precio * o.ventas; })));
     var targetStep = maxRevenue > 0 ? maxRevenue * 1.05 / 5 : 0;
     var niceStep = 1;
     if (targetStep > 0) {
@@ -129,6 +133,12 @@
     }
     svg.appendChild(createSvg("line", { x1: left, y1: bottom, x2: right, y2: bottom, class: "axis" }));
     svg.appendChild(createSvg("line", { x1: left, y1: top, x2: left, y2: bottom, class: "axis" }));
+    var bandPoints = prices.map(function (price, index) { return x(price) + "," + y(revenueHigh[index]); })
+      .concat(prices.slice().reverse().map(function (price, reverseIndex) {
+        var index = prices.length - 1 - reverseIndex;
+        return x(price) + "," + y(revenueLow[index]);
+      })).join(" ");
+    svg.appendChild(createSvg("polygon", { points: bandPoints, class: "revenue-band" }));
     var points = prices.map(function (price, index) { return x(price) + "," + y(revenues[index]); }).join(" ");
     svg.appendChild(createSvg("polyline", { points: points, class: "revenue-line", fill: "none" }));
     observations.forEach(function (observation) {
@@ -150,13 +160,26 @@
   function render(data, observations) {
     emptyState.classList.add("hidden"); errorBanner.classList.add("hidden"); resultsContent.classList.remove("hidden");
     modelSummary.textContent = "Modelo: " + (data.model_type === "polynomial" ? "Polinómico (grado " + data.degree + ")" : "Lineal");
+    var diagnostics = data.diagnostics || {};
+    var convergenceText = "Convergencia: R-hat máx " + format(diagnostics.max_rhat, 3) + " · ESS mín " + format(diagnostics.min_ess, 0);
+    convergenceBanner.textContent = convergenceText;
+    convergenceBanner.classList.toggle("warning", !diagnostics.converged);
+    warningsBanner.innerHTML = data.warnings && data.warnings.length ? "<ul>" + data.warnings.map(function (warning) { return "<li>" + warning + "</li>"; }).join("") + "</ul>" : "";
+    warningsBanner.classList.toggle("hidden", !data.warnings || !data.warnings.length);
     kpis.innerHTML = "<div class=\"kpi\"><span class=\"kpi-label\">Precio óptimo</span><span class=\"kpi-value\">$" + format(data.optimal_price) + "</span></div>" +
       "<div class=\"kpi\"><span class=\"kpi-label\">Ingreso esperado</span><span class=\"kpi-value\">$" + format(data.optimal_expected_revenue) + "</span></div>" +
       (data.model_type === "linear" ? "<div class=\"kpi\"><span class=\"kpi-label\">Elasticidad estimada (pendiente)</span><span class=\"kpi-value\">" + format(data.parameter_means.pendiente, 3) + "</span></div>" : "");
-    var parameterRows = Object.keys(data.parameter_means).map(function (name) { return "<tr><td>" + name + "</td><td>" + format(data.parameter_means[name], 4) + "</td></tr>"; }).join("");
+    function parameterLabel(name) {
+      if (name === "intercepto") return "Ventas al precio promedio";
+      if (name === "pendiente") return "Elasticidad (pendiente)";
+      if (name === "sigma_ventas") return "Dispersión (sigma)";
+      var betaMatch = /^beta_(\\d+)$/.exec(name);
+      return betaMatch ? "Coeficiente de grado " + betaMatch[1] : name;
+    }
+    var parameterRows = Object.keys(data.parameter_means).map(function (name) { return "<tr><td>" + parameterLabel(name) + "</td><td>" + format(data.parameter_means[name], 4) + "</td></tr>"; }).join("");
     parametersTable.innerHTML = "<table><thead><tr><th>Parámetro</th><th>Media posterior</th></tr></thead><tbody>" + parameterRows + "</tbody></table>";
-    var resultRows = data.price_grid.map(function (price, index) { return "<tr><td>" + format(price) + "</td><td>" + format(data.expected_sales[index]) + "</td><td>" + format(data.expected_revenue[index]) + "</td></tr>"; }).join("");
-    resultsTable.innerHTML = "<table><thead><tr><th>Precio</th><th>Ventas esperadas</th><th>Ingresos esperados</th></tr></thead><tbody>" + resultRows + "</tbody></table>";
+    var resultRows = data.price_grid.map(function (price, index) { return "<tr><td>" + format(price) + "</td><td>" + format(data.expected_sales[index]) + "</td><td>" + format(data.expected_revenue[index]) + "</td><td>" + format(data.expected_revenue_hdi_low[index]) + " – " + format(data.expected_revenue_hdi_high[index]) + "</td></tr>"; }).join("");
+    resultsTable.innerHTML = "<table><thead><tr><th>Precio</th><th>Ventas esperadas</th><th>Ingresos esperados</th><th>Intervalo de ingresos (90%)</th></tr></thead><tbody>" + resultRows + "</tbody></table>";
     drawChart(data, observations);
   }
 

@@ -1,7 +1,7 @@
 # Recomendaciones pendientes
 
 > Documento vivo con las mejoras recomendadas para `price-optimization-pymc`.
-> No implementadas aún — priorizadas para futuras iteraciones.
+> Incluye mejoras implementadas y pendientes — priorizadas para futuras iteraciones.
 
 ## Hecho recientemente
 
@@ -12,36 +12,38 @@
 - **Entorno reproducible**: `uv` + `.python-version` + `uv.lock` versionado.
 - **Publicación**: commits por unidad de trabajo, CI en GitHub Actions (matriz de Python 3.11 y 3.12) y
   una captura real de la interfaz en el README (`docs/screenshot.png`).
+- **Credibilidad del modelo**: priors calibrados, guard de óptimo en el borde, recorte de ventas negativas,
+  intervalos HDI 90% y diagnósticos de convergencia visibles en la API y la UI.
 
 ---
 
 ## 1. Modelo (prioridad alta)
 
-### 1.1 Priors calibrados
+### 1.1 Priors calibrados — ✅ Hecho
 El prior de la pendiente es `Normal(mu = -1, sigma = 1)` mientras que en el dataset de ejemplo la
 posterior queda en `-2.69`: más de 1.5 desvíos del prior. Con 3 a 30 observaciones el prior domina y
 **sesga la elasticidad hacia valores débiles**, lo que a su vez mueve el precio óptimo. Opciones:
 priors débilmente informativos en la escala de los datos (o log-log), o `pm.Horseshoe` para los
 coeficientes polinómicos, que es regularización bayesiana estilo lasso.
 
-### 1.2 Guard de extrapolación en el óptimo
+### 1.2 Guard de extrapolación en el óptimo — ✅ Hecho
 El grid automático cubre solo el rango observado. Si el máximo real de ingresos está fuera de ese
 rango, el `argmax` cae en el borde y el resultado se reporta como si fuera un óptimo interior.
 Devolver una advertencia explícita cuando `optimal_price` es el primero o el último punto del grid.
 Es la mejora con mejor relación credibilidad/esfuerzo: hoy la API puede devolver un óptimo de borde en
 silencio.
 
-### 1.3 Recorte de ventas esperadas negativas
+### 1.3 Recorte de ventas esperadas negativas — ✅ Hecho
 Con el modelo polinómico, `expected_sales` puede volverse negativa a precios altos y los ingresos
 "esperados" siguen esa negatividad. Recortar en 0 (o modelar la demanda en escala log) antes de
 calcular ingresos.
 
-### 1.4 Intervalos de credibilidad (HDI 90%)
+### 1.4 Intervalos de credibilidad (HDI 90%) — ✅ Hecho
 El modelo devuelve medias posteriores, pero la incertidumbre es el valor agregado del enfoque
 bayesiano. Devolver cuantiles para `expected_sales` y `expected_revenue` permitiría dibujar bandas de
 incertidumbre en el gráfico, no solo una línea y un punto.
 
-### 1.5 Diagnósticos de convergencia en la respuesta
+### 1.5 Diagnósticos de convergencia en la respuesta — ✅ Hecho
 Hoy PyMC escribe `rhat statistic is larger than 1.01` en el log del servidor y nadie se entera.
 Exponer R-hat y ESS por parámetro (`az.summary`) y mostrar una advertencia visible en la UI cuando no
 convergió. Sin esto, un usuario puede decidir precios con cadenas mal mezcladas.
@@ -107,12 +109,12 @@ forma más controlada.
 
 | Prioridad | Mejora | Esfuerzo | Impacto |
 |-----------|--------|----------|---------|
-| 1 | Guard de extrapolación en el óptimo (1.2) | S | Alto |
-| 2 | Priors calibrados (1.1) | M | Alto |
-| 3 | R-hat/ESS en la respuesta + alerta en la UI (1.5) | M | Alto |
-| 4 | Intervalos de credibilidad y banda en el gráfico (1.4, 4) | M | Alto |
-| 5 | Recorte de ventas negativas (1.3) | S | Medio |
-| 6 | Dockerfile + compose (2) | M | Medio |
+| 1 | Cola de trabajos y rate limiting (3) | L | Medio |
+| 2 | Splines bayesianos (1.7) | L | Alto |
+| 3 | Dockerfile + compose (2) | M | Medio |
+| 4 | Tests unitarios del JS con `node --test` (4) | M | Medio |
+| 5 | Modelo log-log (1.6) | S | Medio |
+| 6 | Datasets de ejemplo (5) | S | Medio |
 | 7 | Modelo log-log (1.6) | S | Medio |
 | 8 | Tests unitarios del JS con `node --test` (4) | M | Medio |
 | 9 | Datasets de ejemplo (5) | S | Medio |
