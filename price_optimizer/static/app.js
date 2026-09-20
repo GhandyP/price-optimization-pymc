@@ -118,13 +118,14 @@
       niceStep = magnitude * (niceFactors.find(function (factor) { return factor >= normalized; }) || 10);
     }
     var maxY = niceStep * 5;
+    var yDecimals = niceStep >= 1 ? 0 : niceStep >= 0.1 ? 1 : 2;
     function x(price) { return left + (price - minPrice) / (maxPrice - minPrice || 1) * (right - left); }
     function y(revenue) { return bottom - revenue / maxY * (bottom - top); }
     for (var i = 0; i <= 5; i += 1) {
       var gy = top + (bottom - top) * i / 5;
       svg.appendChild(createSvg("line", { x1: left, y1: gy, x2: right, y2: gy, class: "gridline" }));
       var tick = createSvg("text", { x: left - 8, y: gy + 4, class: "axis-text", "text-anchor": "end" });
-      tick.textContent = format(niceStep * (5 - i), 0); svg.appendChild(tick);
+      tick.textContent = format(niceStep * (5 - i), yDecimals); svg.appendChild(tick);
     }
     svg.appendChild(createSvg("line", { x1: left, y1: bottom, x2: right, y2: bottom, class: "axis" }));
     svg.appendChild(createSvg("line", { x1: left, y1: top, x2: left, y2: bottom, class: "axis" }));
