@@ -23,6 +23,7 @@ def test_root_serves_expected_html():
 def test_static_assets_are_served():
     assert client.get("/static/styles.css").headers["content-type"].startswith("text/css")
     assert client.get("/static/app.js").headers["content-type"].startswith("text/javascript")
+    assert client.get("/static/favicon.svg").status_code == 200
 
 
 def test_javascript_element_lookups_exist_in_html():
