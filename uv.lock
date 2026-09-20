@@ -704,6 +704,7 @@ name = "price-optimization-pymc"
 version = "1.0.0"
 source = { editable = "." }
 dependencies = [
+    { name = "arviz" },
     { name = "fastapi" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
@@ -714,7 +715,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "arviz" },
     { name = "httpx" },
     { name = "pytest" },
     { name = "ruff" },
@@ -722,6 +722,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "arviz" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "pandas", specifier = ">=2.2" },
@@ -731,7 +732,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "arviz" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "ruff", specifier = ">=0.6" },

@@ -1,12 +1,19 @@
 from __future__ import annotations
 
 import importlib
+import warnings
 
+import arviz as az
 import numpy as np
 import pandas as pd
 import pytest
 
 optimizer = importlib.import_module("price_optimizer.model")
+
+
+def test_data_scale_is_positive_for_degenerate_values():
+    assert optimizer._data_scale(np.array([5.0, 5.0])) == pytest.approx(0.5)
+    assert optimizer._data_scale(np.zeros(3)) == pytest.approx(1.0)
 
 
 def test_coerce_dataframe_accepts_dataframe_and_coerces_numeric_strings():
@@ -60,6 +67,21 @@ def test_build_price_grid_auto_generates_uniform_grid_for_single_observation_pri
     assert grid[-1] == pytest.approx(16.0)
 
 
+def test_run_price_optimization_passes_four_chains_to_sampler(sample_observations, patch_sample, monkeypatch):
+    trace = patch_sample()
+    captured = {}
+
+    def capture_sample(*args, **kwargs):
+        captured.update(kwargs)
+        return trace
+
+    monkeypatch.setattr(optimizer.pm, "sample", capture_sample)
+    optimizer.run_price_optimization(sample_observations, draws=10, tune=10)
+
+    assert captured["chains"] == 4
+    assert captured["progressbar"] is False
+
+
 def test_run_price_optimization_with_list_input_returns_result_dataclass(sample_observations, patch_sample):
     patch_sample()
     custom_grid = [9, 10, 11, 12, 13, 14]
@@ -100,6 +122,103 @@ def test_run_price_optimization_integration_small_dataset():
     assert len(result.price_grid) == len(result.expected_sales) == len(result.expected_revenue)
     assert result.optimal_expected_revenue == pytest.approx(max(result.expected_revenue))
     assert min(result.price_grid) <= result.optimal_price <= max(result.price_grid)
+
+
+def test_result_contains_hdi_and_convergence_diagnostics(sample_observations, patch_sample):
+    rng = np.random.default_rng(0)
+    well_behaved_trace = az.from_dict(
+        posterior={
+            "intercepto": rng.normal(120.0, 0.5, (2, 100)),
+            "pendiente": rng.normal(-2.1, 0.05, (2, 100)),
+            "sigma_ventas": rng.normal(4.0, 0.1, (2, 100)),
+        }
+    )
+    patch_sample(well_behaved_trace)
+    result = optimizer.run_price_optimization(sample_observations, price_grid=[9, 10, 11, 12, 13, 14], draws=10, tune=10)
+    assert len(result.expected_sales_hdi_low) == len(result.price_grid)
+    assert len(result.expected_revenue_hdi_low) == len(result.price_grid)
+    assert all(low <= mean <= high for low, mean, high in zip(result.expected_sales_hdi_low, result.expected_sales, result.expected_sales_hdi_high))
+    assert set(result.diagnostics) == {"rhat", "ess", "max_rhat", "min_ess", "converged"}
+    assert result.diagnostics["converged"] is True
+
+
+def test_hdi_matches_independent_one_dimensional_grid_columns(sample_observations, patch_sample):
+    rng = np.random.default_rng(0)
+    well_behaved_trace = az.from_dict(
+        posterior={
+            "intercepto": rng.normal(120.0, 0.5, (2, 100)),
+            "pendiente": rng.normal(-2.1, 0.05, (2, 100)),
+            "sigma_ventas": rng.normal(4.0, 0.1, (2, 100)),
+        }
+    )
+    patch_sample(well_behaved_trace)
+    price_grid = np.array([9, 10, 11, 12, 13, 14], dtype=float)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result = optimizer.run_price_optimization(sample_observations, price_grid=price_grid, draws=10, tune=10)
+
+    assert not any("hdi" in str(item.message).lower() and "2d" in str(item.message).lower() for item in caught)
+
+    intercepto = well_behaved_trace.posterior["intercepto"].values
+    pendiente = well_behaved_trace.posterior["pendiente"].values
+    draw_sales = np.clip(intercepto[:, :, None] + pendiente[:, :, None] * (price_grid - np.mean([10, 12, 15, 18])), 0.0, None)
+    for index in (1, 4):
+        one_column = draw_sales[:, :, index].reshape(-1)
+        expected_interval = np.asarray(az.hdi(one_column, hdi_prob=optimizer.HDI_PROB))
+        assert result.expected_sales_hdi_low[index] == pytest.approx(expected_interval[0])
+        assert result.expected_sales_hdi_high[index] == pytest.approx(expected_interval[1])
+
+
+def test_badly_mixed_trace_is_not_converged(sample_observations, patch_sample):
+    bad_trace = az.from_dict(
+        posterior={
+            "intercepto": np.array([[100.0] * 6, [200.0] * 6]),
+            "pendiente": np.array([[-2.0] * 6, [2.0] * 6]),
+            "sigma_ventas": np.array([[4.0] * 6, [20.0] * 6]),
+        }
+    )
+    patch_sample(bad_trace)
+    result = optimizer.run_price_optimization(sample_observations, price_grid=[9, 10, 11, 12, 13, 14], draws=10, tune=10)
+    assert result.diagnostics["converged"] is False
+    assert any("R-hat" in warning or "muestras efectivas" in warning for warning in result.warnings)
+
+
+def test_polynomial_draws_are_clipped_before_means_and_revenue(sample_observations, patch_sample):
+    trace = az.from_dict(
+        posterior={
+            "intercepto": np.zeros((2, 6)),
+            "beta_1": np.full((2, 6), -1.0),
+            "beta_2": np.zeros((2, 6)),
+            "sigma_ventas": np.full((2, 6), 2.0),
+        }
+    )
+    patch_sample(trace)
+    result = optimizer.run_price_optimization(
+        sample_observations, price_grid=[9, 10, 11, 12, 13, 14], model_type="polynomial", degree=2, draws=10, tune=10
+    )
+    assert min(result.expected_sales) == 0.0
+    assert result.expected_revenue == pytest.approx(np.array(result.price_grid) * result.expected_sales)
+    assert "Se recortaron ventas esperadas negativas en 1 punto(s) del grid." in result.warnings
+
+
+def test_boundary_warning_only_applies_at_grid_edge(sample_observations, patch_sample):
+    patch_sample()
+    edge = optimizer.run_price_optimization(sample_observations, price_grid=[9, 10, 11, 12, 13, 14], draws=10, tune=10)
+    assert any("borde del grid" in warning for warning in edge.warnings)
+    interior_trace = az.from_dict(
+        posterior={
+            "intercepto": np.full((2, 6), 100.0),
+            "beta_1": np.full((2, 6), -15.0),
+            "beta_2": np.zeros((2, 6)),
+            "sigma_ventas": np.full((2, 6), 2.0),
+        }
+    )
+    patch_sample(interior_trace)
+    interior = optimizer.run_price_optimization(
+        sample_observations, price_grid=[9, 10, 11, 12, 13, 14], model_type="polynomial", degree=2, draws=10, tune=10
+    )
+    assert not any("borde del grid" in warning for warning in interior.warnings)
 
 
 def test_run_price_optimization_polynomial_returns_beta_parameters(

@@ -9,6 +9,7 @@ dependencies = [
     "pandas>=2.2",
     "fastapi>=0.115",
     "uvicorn>=0.32",
+    "arviz",
 ]
 
 [dependency-groups]
@@ -16,7 +17,6 @@ dev = [
     "pytest>=8.3",
     "httpx>=0.28",
     "ruff>=0.6",
-    "arviz",
 ]
 
 [project.scripts]
