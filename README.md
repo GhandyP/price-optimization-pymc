@@ -184,10 +184,11 @@ navegador se prueba a mano. La suite deja 2 warnings de deprecación que vienen 
 y `anyio`, no del proyecto.
 
 Esos mismos comandos los corre **GitHub Actions** en cada push a `main` y en cada pull request
-(`.github/workflows/ci.yml`), con `uv sync --locked` y dos legs de la matriz —Python 3.11 y 3.12, el
-rango que declara `pyproject.toml`— más un guard que verifica que cada leg realmente probó la versión
-que dice. Si `uv.lock` queda desactualizado respecto de `pyproject.toml`, el CI falla en lugar de
-resolver otra cosa.
+(`.github/workflows/ci.yml`), más dos pasos previos: `uv sync --locked`, para que un `uv.lock`
+desactualizado falle en lugar de resolver otra cosa, y un guard que verifica que cada leg de la matriz
+—Python 3.11 y 3.12, el rango que declara `pyproject.toml`— realmente probó la versión que dice. Las
+acciones están fijadas a la major vigente cuando son de primera parte (`actions/checkout@v7`) y a un
+tag inmutable cuando son de terceros (`astral-sh/setup-uv@v10.0.1`).
 
 ## 5. Estructura del proyecto
 

@@ -42,7 +42,7 @@ aprobado del linaje `review-11e8f9041397401b`.
 | # | Decisión | Motivo |
 |---|----------|--------|
 | P1 | Tres commits: migración / CI / captura | Cada uno bisecable y con docs al día, sin estados intermedios rotos |
-| P2 | `actions/checkout@v7` y `astral-sh/setup-uv@v10.0.1` | `v7` es la major vigente de checkout (2026-06); `v10.0.1` de setup-uv usa *immutable releases*. Verificado contra la fuente oficial, no de memoria |
+| P2 | `actions/checkout@v7` y `astral-sh/setup-uv@v10.0.1` | `v7` es la major vigente de checkout (2026-06): es un tag móvil a propósito, de primera parte, que recibe parches de seguridad. `setup-uv@v10.0.1` es de terceros y está fijado a un tag inmutable (la release declara `immutable: true`, verificado contra la API de GitHub) |
 | P3 | Matriz de Python 3.11 y 3.12 con guard de versión | `requires-python = ">=3.11,<3.13"` deja de ser aspiracional; el guard hace que la matriz no pueda pasar probando dos veces lo mismo |
 | P4 | `uv sync --locked` en CI | El lock es el contrato: si `uv.lock` no coincide con `pyproject.toml`, CI falla en vez de resolver otra cosa |
 | P5 | Captura real con `firefox --headless --screenshot` sobre el servidor levantado | Firefox está instalado en la máquina: captura de verdad, no mockup ni placeholder |
@@ -61,7 +61,7 @@ aprobado del linaje `review-11e8f9041397401b`.
 - [x] **T4** **C2** `ci:` workflow + este plan.
 - [x] **T5** Captura real de la interfaz con Chromium headless y Playwright sobre el servidor levantado (inferencia real, `draws=500`, `tune=200`), guardada como `docs/screenshot.png`.
 - [x] **T6** **C4** `docs:` captura y sección «Cómo se ve» en el README.
-- [ ] **T7** Verificación independiente (`gentle-ai-verify`): validez del YAML, referencias de acción,
+- [x] **T7** Verificación independiente (`gentle-ai-verify`): validez del YAML, referencias de acción,
   espejo entre los comandos del workflow y los documentados, y las afirmaciones del README.
 - [ ] **T8** Review nativo RDD del delta `C1..HEAD`.
 - [ ] **T9** Reporte final y **decisión de push** (turno del usuario).
@@ -101,11 +101,23 @@ punta a punta, no solo de que los archivos existen.
   comandos verificados en la máquina; la prueba definitiva es el primer push, que es decisión tuya.
 - **La matriz duplica el tiempo de CI** (dos jobs, cada uno baja PyMC). El límite gratuito de Actions
   para repos públicos lo absorbe sin problema.
-- **La captura es de 1280×900 y del navegador headless**: es una captura real de la app, no un diseño
-  idealizado. Si el layout no se ve bien a ese ancho, la captura lo va a mostrar (y conviene arreglar
-  el layout, no la captura).
+- **La captura es de 1280×1206 px de CSS (2560×2412 a 2×) y del navegador headless**: es una captura real de la app, no un diseño idealizado. Si el layout no se ve bien a ese ancho, la captura lo va a mostrar (y conviene arreglar el layout, no la captura).
 - **El delta del review es chico pero incluye un archivo ejecutable** (`.github/`), así que no califica
   como «edición pasiva de documentación» y corresponde el preflight.
+
+## Resultado de la verificación independiente
+
+Veredicto: **pass-with-findings**. Reprodujo el espejo del CI y confirmó los números de la
+documentación (41 + 1 tests, 2 warnings de `starlette.testclient` y `anyio`, la aritmética de la
+captura — 121,0406 − 2,7016 × 22,37 ≈ 60,6 ventas y 1.355,75 de ingreso), y verificó contra la API de
+GitHub que `setup-uv@v10.0.1` es una release inmutable.
+
+| # | Sev. | Hallazgo | Resolución |
+|---|------|----------|------------|
+| F1 | Media | `actions/checkout@v7` es un tag móvil, no una release inmutable, y la doc no distinguía los dos criterios de fijado | Se precisa la política en P2 y en el README: primera parte → major vigente; terceros → tag inmutable |
+| F2 | Baja | El plan decía que la captura tenía un tamaño incorrecto y en realidad es de 1280×1206 CSS (2560×2412 a 2×) | Corregido |
+| F3 | Baja | Con ingresos chicos (pico 3) las marcas del eje Y se redondeaban y se duplicaban: `4 / 3 / 2 / 2 / 1 / 0` | Los decimales ahora se derivan del paso de la escala |
+| F4 | Info | El CI corre seis comandos y el README documentaba cuatro | Se aclara que el CI corre esos cuatro más el sync y el guard |
 
 ## Cierre
 
