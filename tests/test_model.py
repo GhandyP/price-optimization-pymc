@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import warnings
 
 import arviz as az
@@ -142,6 +143,30 @@ def test_result_contains_hdi_and_convergence_diagnostics(sample_observations, pa
     assert all(low <= mean <= high for low, mean, high in zip(result.expected_sales_hdi_low, result.expected_sales, result.expected_sales_hdi_high))
     assert set(result.diagnostics) == {"rhat", "ess", "max_rhat", "min_ess", "converged"}
     assert result.diagnostics["converged"] is True
+
+
+def test_single_chain_diagnostics_are_none_and_strict_json_safe(sample_observations, patch_sample):
+    single_chain_trace = az.from_dict(
+        posterior={
+            "intercepto": np.full((1, 6), 120.0),
+            "pendiente": np.full((1, 6), -2.1),
+            "sigma_ventas": np.full((1, 6), 4.0),
+        }
+    )
+    patch_sample(single_chain_trace)
+
+    result = optimizer.run_price_optimization(
+        sample_observations, price_grid=[9, 10, 11, 12, 13, 14], draws=10, tune=10
+    )
+    diagnostics = result.diagnostics
+    serialized = json.dumps(diagnostics)
+
+    assert set(diagnostics["rhat"].values()) == {None}
+    assert diagnostics["max_rhat"] is None
+    assert diagnostics["converged"] is False
+    assert "No se pudo evaluar R-hat (se necesitan al menos 2 cadenas)." in result.warnings
+    assert "NaN" not in serialized
+    assert json.loads(serialized) == diagnostics
 
 
 def test_hdi_matches_independent_one_dimensional_grid_columns(sample_observations, patch_sample):
