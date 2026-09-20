@@ -36,24 +36,10 @@ no expuesto, ver `RECOMENDACIONES.md`) sea razonable.
 Una sola página, `price_optimizer/static/`, sin framework, sin bundler y sin pedidos a ningún host
 externo. El gráfico se dibuja en el navegador como SVG a partir del JSON de la API.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│ Optimización de Precios · PyMC                          │
-├────────────────────────┬────────────────────────────────┤
-│ Datos históricos       │  Precio óptimo      $22,37     │
-│  10, 100               │  Ingreso esperado   $1.355,6   │
-│  12,  90               │  Elasticidad        -2,687     │
-│  15,  80               │                                │
-│  18,  70               │  ┌────── ingresos por precio ─┐│
-│  20,  65               │  │ ●●● datos                  ││
-│                        │  │        ╭─╮                 ││
-│ Modelo   [ Lineal  ▾ ] │  │   ────╯  ╰───  ┆ óptimo    ││
-│ Grado            (n/a) │  └─────────────────────────────┘│
-│ draws   [ 2000 ]       │  Precio   Ventas    Ingresos   │
-│ tune    [ 1000 ]       │  22,37      60,6      1355,60  │
-│ [   Optimizar   ]      │                                │
-└────────────────────────┴────────────────────────────────┘
-```
+![Interfaz de optimización de precios: formulario de datos históricos y modelo a la izquierda, y a la derecha los KPI, el gráfico de ingresos por precio, la tabla de parámetros posteriores y la tabla de ingresos](docs/screenshot.png)
+
+*Captura real de la app con los diez datos de ejemplo, `draws=500` y `tune=200`: precio óptimo 22,37 e
+ingreso esperado 1.355,75. Los decimales cambian entre corridas porque el muestreo es estocástico.*
 
 La página:
 
@@ -194,8 +180,14 @@ node --check price_optimizer/static/app.js   # sintaxis del JS (opcional, requie
 
 Cobertura honesta: **no hay tests unitarios del JavaScript**. La lógica pura de `app.js` se verifica de
 forma estructural (referencias cruzadas de `id`, assets servidos, sintaxis) y su comportamiento en el
-navegador se prueba a mano. **Tampoco hay CI**: los comandos de arriba se corren localmente. La suite
-deja 2 warnings de deprecación que vienen de `starlette.testclient` y `anyio`, no del proyecto.
+navegador se prueba a mano. La suite deja 2 warnings de deprecación que vienen de `starlette.testclient`
+y `anyio`, no del proyecto.
+
+Esos mismos comandos los corre **GitHub Actions** en cada push a `main` y en cada pull request
+(`.github/workflows/ci.yml`), con `uv sync --locked` y dos legs de la matriz —Python 3.11 y 3.12, el
+rango que declara `pyproject.toml`— más un guard que verifica que cada leg realmente probó la versión
+que dice. Si `uv.lock` queda desactualizado respecto de `pyproject.toml`, el CI falla en lugar de
+resolver otra cosa.
 
 ## 5. Estructura del proyecto
 
@@ -212,6 +204,8 @@ tests/
   test_model.py   Tests del modelo
   test_api.py     Tests del contrato HTTP
   test_static_ui.py  Tests de los assets de la UI
+docs/screenshot.png   Captura real de la interfaz, usada en el README
+.github/workflows/ci.yml  CI: matriz de Python, lint, tests y sampler real
 odd/tasks/        Plan de trabajo de la migración (ODD)
 pyproject.toml    Dependencias, entry point y configuración de pytest y ruff
 uv.lock           Versiones exactas resueltas (se versiona)
@@ -255,7 +249,8 @@ Uvicorn 0.53.0, Pydantic 2.13.5. Requiere Python `>=3.11,<3.13` (uv instala 3.11
 - **Sin autenticación, sin rate limiting y sin cola de trabajos.** Cualquiera que alcance el puerto
   puede disparar inferencias que saturan el CPU. Está pensado para correr local. El siguiente cuello de
   botella real es la concurrencia: cada request compila y muestrea sin queue.
-- **Sin CI ni Dockerfile.** Los tests corren a mano; no hay chequeo automático en cada push.
+- **Sin Dockerfile.** El CI corre en cada push, pero no hay imagen de contenedor ni despliegue
+  reproducible fuera de `uv`.
 - **Sin diagnósticos de convergencia en la respuesta.** Un usuario puede tomar decisiones con cadenas
   mal mezcladas sin enterarse: hoy el aviso queda solo en el log del servidor.
 - **El óptimo puede caer en el borde del grid.** Ver §3.1.

@@ -10,6 +10,8 @@
   Detalle y decisiones: `odd/tasks/web-ui-replacement.md`.
 - **Tests de la capa HTTP**: `/optimise`, validaciones, 400 y 504 estaban sin cobertura.
 - **Entorno reproducible**: `uv` + `.python-version` + `uv.lock` versionado.
+- **Publicación**: commits por unidad de trabajo, CI en GitHub Actions (matriz de Python 3.11 y 3.12) y
+  una captura real de la interfaz en el README (`docs/screenshot.png`).
 
 ---
 
@@ -56,21 +58,14 @@ forma más controlada.
 
 ---
 
-## 2. CI/CD
-
-Workflow de GitHub Actions que corra `uv run pytest -q`, `uv run ruff check .` y
-`node --check price_optimizer/static/app.js` en cada push y PR, con un job aparte para
-`uv run pytest -q -m integration` (el sampler real). El repo tiene 41 tests rápidos que corren en ~4 s:
-es la mejora con mejor relación impacto/esfuerzo.
-
-## 3. Infraestructura de despliegue
+## 2. Infraestructura de despliegue
 
 - **Dockerfile de producción**: imagen `python:3.12-slim` con `uv sync --no-dev` y
   `uv run price-opt --host 0.0.0.0`. Sin capa de frontend: la UI viene en el paquete.
 - **docker-compose.yml para desarrollo local**: levantar todo con un comando, sin depender de que quien
   clona tenga Python 3.11.
 
-## 4. Backend
+## 3. Backend
 
 - **Cola de trabajos para la inferencia**: `/optimise` muestrea en un thread con timeout de 120 s. Bajo
   concurrencia, PyMC satura el CPU y las requests se apilan. Opciones: workers con cola (Redis + RQ /
@@ -82,7 +77,7 @@ es la mejora con mejor relación impacto/esfuerzo.
   único `{"error": ..., "detail": ...}` simplificaría a los consumidores. La UI ya maneja ambos.
 - **Ejemplos en los schemas de Pydantic** (`examples=`): mejora la experiencia de `/docs`.
 
-## 5. UI web
+## 4. UI web
 
 - **Tests unitarios del JavaScript**: la validación y el parseo de `app.js` son lógica pura y hoy solo
   se verifican de forma estructural. `node --test` es built-in (no agrega dependencias), pero requiere
@@ -98,7 +93,7 @@ es la mejora con mejor relación impacto/esfuerzo.
   `aria-live` y `role/aria-labelledby` en el SVG.
 - **i18n (español/inglés)**: el copy está hardcodeado en español.
 
-## 6. Datos y producto
+## 5. Datos y producto
 
 - **Datasets de ejemplo en el repo**: un CSV con demanda lineal, cuadrática y con ruido, generado con el
   propio modelo, para la demo y para tests con datos más realistas que 3 a 10 puntos.
@@ -112,15 +107,14 @@ es la mejora con mejor relación impacto/esfuerzo.
 
 | Prioridad | Mejora | Esfuerzo | Impacto |
 |-----------|--------|----------|---------|
-| 1 | CI con pytest + ruff + node --check (2) | S | Alto |
-| 2 | Guard de extrapolación en el óptimo (1.2) | S | Alto |
-| 3 | Priors calibrados (1.1) | M | Alto |
-| 4 | R-hat/ESS en la respuesta + alerta en la UI (1.5) | M | Alto |
-| 5 | Intervalos de credibilidad y banda en el gráfico (1.4, 5) | M | Alto |
-| 6 | Recorte de ventas negativas (1.3) | S | Medio |
-| 7 | Dockerfile + compose (3) | M | Medio |
-| 8 | Modelo log-log (1.6) | S | Medio |
-| 9 | Tests unitarios del JS con `node --test` (5) | M | Medio |
-| 10 | Datasets de ejemplo (6) | S | Medio |
-| 11 | Cola de trabajos y rate limiting (4) | L | Medio |
-| 12 | Splines bayesianos (1.7) | L | Alto |
+| 1 | Guard de extrapolación en el óptimo (1.2) | S | Alto |
+| 2 | Priors calibrados (1.1) | M | Alto |
+| 3 | R-hat/ESS en la respuesta + alerta en la UI (1.5) | M | Alto |
+| 4 | Intervalos de credibilidad y banda en el gráfico (1.4, 4) | M | Alto |
+| 5 | Recorte de ventas negativas (1.3) | S | Medio |
+| 6 | Dockerfile + compose (2) | M | Medio |
+| 7 | Modelo log-log (1.6) | S | Medio |
+| 8 | Tests unitarios del JS con `node --test` (4) | M | Medio |
+| 9 | Datasets de ejemplo (5) | S | Medio |
+| 10 | Cola de trabajos y rate limiting (3) | L | Medio |
+| 11 | Splines bayesianos (1.7) | L | Alto |
