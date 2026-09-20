@@ -109,14 +109,22 @@
     var prices = data.price_grid, revenues = data.expected_revenue;
     var minPrice = Math.min.apply(null, prices), maxPrice = Math.max.apply(null, prices);
     var maxRevenue = Math.max.apply(null, revenues.concat(observations.map(function (o) { return o.precio * o.ventas; })));
-    maxRevenue = maxRevenue > 0 ? maxRevenue * 1.05 : 1;
+    var targetStep = maxRevenue > 0 ? maxRevenue * 1.05 / 5 : 0;
+    var niceStep = 1;
+    if (targetStep > 0) {
+      var magnitude = 10 ** Math.floor(Math.log10(targetStep));
+      var normalized = targetStep / magnitude;
+      var niceFactors = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10];
+      niceStep = magnitude * (niceFactors.find(function (factor) { return factor >= normalized; }) || 10);
+    }
+    var maxY = niceStep * 5;
     function x(price) { return left + (price - minPrice) / (maxPrice - minPrice || 1) * (right - left); }
-    function y(revenue) { return bottom - revenue / maxRevenue * (bottom - top); }
+    function y(revenue) { return bottom - revenue / maxY * (bottom - top); }
     for (var i = 0; i <= 5; i += 1) {
       var gy = top + (bottom - top) * i / 5;
       svg.appendChild(createSvg("line", { x1: left, y1: gy, x2: right, y2: gy, class: "gridline" }));
       var tick = createSvg("text", { x: left - 8, y: gy + 4, class: "axis-text", "text-anchor": "end" });
-      tick.textContent = format(maxRevenue * (5 - i) / 5, 0); svg.appendChild(tick);
+      tick.textContent = format(niceStep * (5 - i), 0); svg.appendChild(tick);
     }
     svg.appendChild(createSvg("line", { x1: left, y1: bottom, x2: right, y2: bottom, class: "axis" }));
     svg.appendChild(createSvg("line", { x1: left, y1: top, x2: left, y2: bottom, class: "axis" }));
@@ -128,6 +136,11 @@
     var optimalX = x(data.optimal_price);
     svg.appendChild(createSvg("line", { x1: optimalX, y1: top, x2: optimalX, y2: bottom, class: "optimal-line" }));
     var optimalLabel = createSvg("text", { x: optimalX + 5, y: top + 15, class: "optimal-label" }); optimalLabel.textContent = "óptimo"; svg.appendChild(optimalLabel);
+    for (var xTick = 0; xTick <= 4; xTick += 1) {
+      var price = minPrice + (maxPrice - minPrice) * xTick / 4;
+      var priceTick = createSvg("text", { x: x(price), y: bottom + 18, class: "axis-text", "text-anchor": "middle" });
+      priceTick.textContent = format(price, 2); svg.appendChild(priceTick);
+    }
     var xLabel = createSvg("text", { x: (left + right) / 2, y: 385, class: "axis-label", "text-anchor": "middle" }); xLabel.textContent = "Precio"; svg.appendChild(xLabel);
     var yLabel = createSvg("text", { x: 15, y: (top + bottom) / 2, class: "axis-label", transform: "rotate(-90 15 " + ((top + bottom) / 2) + ")", "text-anchor": "middle" }); yLabel.textContent = "Ingresos"; svg.appendChild(yLabel);
     chartContainer.appendChild(svg);
