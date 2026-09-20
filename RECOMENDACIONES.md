@@ -3,88 +3,108 @@
 > Documento vivo con las mejoras recomendadas para `price-optimization-pymc`.
 > No implementadas aún — priorizadas para futuras iteraciones.
 
----
+## Hecho recientemente
 
-## 1. Infraestructura y despliegue
-
-### 1.1 Docker Compose para desarrollo local
-Un `docker-compose.yml` con el backend FastAPI y (si aplica) la app web Flutter compilada permitiría levantar todo con un solo comando, sin depender de que el desarrollador tenga Python 3.10+ y Flutter instalados.
-
-### 1.2 CI/CD con GitHub Actions
-Workflow que corra `pytest` en cada push/PR y bloquee el merge si falla. Es la mejora con mejor relación impacto/esfuerzo: el repo ya tiene 16 tests que se ejecutan en ~3s. Se podría añadir un job de `flutter analyze` y `flutter test` cuando existan tests de widget.
-
-### 1.3 Dockerfile de producción
-Imagen ligera (python:3.12-slim) con solo las dependencias de runtime, sin la capa Flutter. Facilita el despliegue en cualquier plataforma (Render, Railway, Fly.io, VPS).
+- **Migración de Flutter a una UI web servida por FastAPI** (antes: app Flutter + API con matplotlib y
+  PNG en base64). El proyecto ahora corre con `uv run price-opt` y se prueba con `uv run pytest`.
+  Detalle y decisiones: `odd/tasks/web-ui-replacement.md`.
+- **Tests de la capa HTTP**: `/optimise`, validaciones, 400 y 504 estaban sin cobertura.
+- **Entorno reproducible**: `uv` + `.python-version` + `uv.lock` versionado.
 
 ---
 
-## 2. Backend
+## 1. Modelo (prioridad alta)
 
-### 2.1 Cola de trabajos para la inferencia
-`/optimise` ejecuta MCMC en un thread con timeout de 120s. Bajo concurrencia, PyMC satura la CPU y las requests se apilan. Opciones: workers asíncronos con cola (Redis + RQ / Celery) o rate limiting. Para el caso de uso actual (demanda interna baja) no es urgente, pero es el primer cuello de botella real en producción.
+### 1.1 Priors calibrados
+El prior de la pendiente es `Normal(mu = -1, sigma = 1)` mientras que en el dataset de ejemplo la
+posterior queda en `-2.69`: más de 1.5 desvíos del prior. Con 3 a 30 observaciones el prior domina y
+**sesga la elasticidad hacia valores débiles**, lo que a su vez mueve el precio óptimo. Opciones:
+priors débilmente informativos en la escala de los datos (o log-log), o `pm.Horseshoe` para los
+coeficientes polinómicos, que es regularización bayesiana estilo lasso.
 
-### 2.2 Intervalos de credibilidad en la respuesta
-El modelo devuelve medias posteriores, pero la incertidumbre es el valor agregado del enfoque bayesiano. Añadir cuantiles (HDI al 90%) para `expected_sales` y `expected_revenue` permitiría mostrar bandas de incertidumbre en la UI, no solo un punto óptimo.
+### 1.2 Guard de extrapolación en el óptimo
+El grid automático cubre solo el rango observado. Si el máximo real de ingresos está fuera de ese
+rango, el `argmax` cae en el borde y el resultado se reporta como si fuera un óptimo interior.
+Devolver una advertencia explícita cuando `optimal_price` es el primero o el último punto del grid.
+Es la mejora con mejor relación credibilidad/esfuerzo: hoy la API puede devolver un óptimo de borde en
+silencio.
 
-### 2.3 Diagnósticos de convergencia en la respuesta
-`raw_trace` ya se expone, pero el frontend no lo usa. Mejor: exponer R-hat y ESS efectivo por parámetro (calculados con `az.summary` o equivalentes) y mostrar una advertencia si no convergió. Evita que el usuario tome decisiones con cadenas mal mezcladas.
+### 1.3 Recorte de ventas esperadas negativas
+Con el modelo polinómico, `expected_sales` puede volverse negativa a precios altos y los ingresos
+"esperados" siguen esa negatividad. Recortar en 0 (o modelar la demanda en escala log) antes de
+calcular ingresos.
 
-### 2.4 Validación cruzada del grid vs observaciones
-Validar que los valores de `price_grid` estén dentro de un rango razonable respecto a los precios observados (ej. no extrapolar más allá de X% del rango), para evitar predicciones sin soporte empírico.
+### 1.4 Intervalos de credibilidad (HDI 90%)
+El modelo devuelve medias posteriores, pero la incertidumbre es el valor agregado del enfoque
+bayesiano. Devolver cuantiles para `expected_sales` y `expected_revenue` permitiría dibujar bandas de
+incertidumbre en el gráfico, no solo una línea y un punto.
 
-### 2.5 Manejo estructurado de errores
-Los errores ya devuelven 400/504 con detalle claro. Un formato JSON consistente `{"error": "...", "detail": "..."}` en todas las respuestas de error facilitaría el parseo en Flutter (el cliente ya intenta extraer `detail` de varias formas).
+### 1.5 Diagnósticos de convergencia en la respuesta
+Hoy PyMC escribe `rhat statistic is larger than 1.01` en el log del servidor y nadie se entera.
+Exponer R-hat y ESS por parámetro (`az.summary`) y mostrar una advertencia visible en la UI cuando no
+convergió. Sin esto, un usuario puede decidir precios con cadenas mal mezcladas.
 
-### 2.6 Endpoint de documentación de ejemplos
-FastAPI ya genera `/docs` (Swagger). Añadir ejemplos explícitos a los schemas de Pydantic (`examples=`) mejoraría la experiencia de consumo de la API.
+### 1.6 Modelo log-log (`model_type="loglog"`)
+Alternativa simple al polinomio: `log(ventas) ~ log(precio)`. El coeficiente es **directamente** la
+elasticidad, lo que simplifica la lectura de negocio y evita estimar elasticidad variable con
+polinomios que oscilan en los extremos.
 
----
-
-## 3. Modelo
-
-### 3.1 Splines bayesianos
-El polinomio global (grado 2-3) captura curvatura simple, pero puede oscilar en los extremos. Un modelo de splines (p. ej. `pm.gp` o B-splines con priors sobre los coeficientes) modela elasticidad variable de forma más flexible y controlada. Es la evolución natural del problema 1.
-
-### 3.2 Priors con regularización
-Los coeficientes polinómicos usan `sigma=1.0`. Priors tipo `pm.Horseshoe` o `sigma` con distribución (regularización bayesiana tipo lasso/ridge) reducirían el sobreajuste en datasets chicos — el repo trabaja con 3–30 observaciones.
-
-### 3.3 Modelo log-log (elasticidad constante directa)
-Alternativa simple y económica al polinomio: regresión en log(ventas) ~ log(precio). El coeficiente ES directamente la elasticidad, lo que simplifica la interpretación para el negocio. Podría ofrecerse como `model_type="loglog"`.
-
-### 3.4 Guard contra extrapolación en el óptimo
-Cuando el óptimo cae en el borde del grid (indicio de que el rango evaluado no contiene el máximo real), devolver una advertencia explícita.
-
----
-
-## 4. Flutter
-
-### 4.1 Tests de widget
-No hay tests de widget actualmente. El parsing de texto (`_parsePairs`, `_parseGrid`) y la validación de formulario son lógica pura fácil de testear. `flutter test` daría red de seguridad a cambios de UI.
-
-### 4.2 Visualización de datos observados
-Mostrar un scatter de las observaciones (precio vs ventas) antes de optimizar permitiría al usuario detectar datos anómalos o relaciones no lineales a simple vista.
-
-### 4.3 Exportar resultados (CSV/JSON)
-Un botón de exportación de la tabla precio/ventas/ingresos sería útil para análisis posterior.
-
-### 4.4 Accesibilidad
-Revisar soporte de screen reader (semántica de `TextFormField` con `labelText` ya ayuda), contraste de colores y tamaño mínimo de touch targets. Material 3 ya da buena base, pero merece una auditoría manual.
-
-### 4.5 i18n (español/inglés)
-La UI está hardcodeada en español. `flutter_localizations` + ARB permitiría multiidioma, útil si el repo se muestra en un portfolio internacional.
+### 1.7 Splines bayesianos
+El polinomio global de grado 2-3 captura curvatura simple pero puede oscilar en los bordes. Un modelo
+de splines (B-splines con priors sobre los coeficientes, o `pm.gp`) modela elasticidad variable de
+forma más controlada.
 
 ---
 
-## 5. Datos y producto
+## 2. CI/CD
 
-### 5.1 Datasets de ejemplo en el repo
-Un CSV con datos sintéticos de demanda (lineal, cuadrática y con ruido) facilitaría la demo y los tests. Se puede generar con el propio modelo.
+Workflow de GitHub Actions que corra `uv run pytest -q`, `uv run ruff check .` y
+`node --check price_optimizer/static/app.js` en cada push y PR, con un job aparte para
+`uv run pytest -q -m integration` (el sampler real). El repo tiene 41 tests rápidos que corren en ~4 s:
+es la mejora con mejor relación impacto/esfuerzo.
 
-### 5.2 Persistencia de resultados
-El sistema es stateless: no guarda historial de optimizaciones. Si se quiere uso continuo, una base ligera (SQLite) con las optimizaciones realizadas habilitaría comparaciones y seguimiento.
+## 3. Infraestructura de despliegue
 
-### 5.3 Endpoint de elasticidad puntual
-Además del óptimo, exponer la elasticidad en el punto óptimo (o en un precio dado) da al negocio un número directamente comunicable.
+- **Dockerfile de producción**: imagen `python:3.12-slim` con `uv sync --no-dev` y
+  `uv run price-opt --host 0.0.0.0`. Sin capa de frontend: la UI viene en el paquete.
+- **docker-compose.yml para desarrollo local**: levantar todo con un comando, sin depender de que quien
+  clona tenga Python 3.11.
+
+## 4. Backend
+
+- **Cola de trabajos para la inferencia**: `/optimise` muestrea en un thread con timeout de 120 s. Bajo
+  concurrencia, PyMC satura el CPU y las requests se apilan. Opciones: workers con cola (Redis + RQ /
+  Celery) o rate limiting. Para el caso de uso actual (demo local) no es urgente, pero es el primer
+  cuello de botella real.
+- **Límite de tasa y tamaño de payload**: hoy cualquier cliente puede pedir `draws=10000` sin límite de
+  frecuencia.
+- **Formato de error consistente**: `detail` es string en 400/504 y lista de objetos en 422. Un formato
+  único `{"error": ..., "detail": ...}` simplificaría a los consumidores. La UI ya maneja ambos.
+- **Ejemplos en los schemas de Pydantic** (`examples=`): mejora la experiencia de `/docs`.
+
+## 5. UI web
+
+- **Tests unitarios del JavaScript**: la validación y el parseo de `app.js` son lógica pura y hoy solo
+  se verifican de forma estructural. `node --test` es built-in (no agrega dependencias), pero requiere
+  decidir cómo se exponen las funciones (ESM o un shim de exports) sin romper el "sin build step".
+  Esto incluye el hallazgo informativo `R3-ui-submit-coverage-gap` del review nativo: el camino de
+  submit del formulario (parseo → validación → fetch → render) no está cubierto por ningún test.
+- **Exportar resultados (CSV/JSON)**: un botón para bajar la tabla precio / ventas / ingresos.
+- **Scatter antes de optimizar**: mostrar las observaciones apenas se cargan permite detectar datos
+  anómalos o relaciones no lineales a simple vista, antes de gastar 20 segundos de inferencia.
+- **Banda de incertidumbre en el gráfico**: depende de 1.4.
+- **`Content-Security-Policy`**: hoy no hay CSP explícita (el HTML se arma con datos de la propia API).
+- **Accesibilidad**: revisar contraste, foco visible y semántica de los campos; ya hay `label for`,
+  `aria-live` y `role/aria-labelledby` en el SVG.
+- **i18n (español/inglés)**: el copy está hardcodeado en español.
+
+## 6. Datos y producto
+
+- **Datasets de ejemplo en el repo**: un CSV con demanda lineal, cuadrática y con ruido, generado con el
+  propio modelo, para la demo y para tests con datos más realistas que 3 a 10 puntos.
+- **Persistencia de resultados**: el sistema es stateless. Una SQLite con las optimizaciones hechas
+  habilitaría comparaciones y seguimiento.
+- **Endpoint de elasticidad puntual**: además del óptimo, devolver la elasticidad en un precio dado.
 
 ---
 
@@ -92,13 +112,15 @@ Además del óptimo, exponer la elasticidad en el punto óptimo (o en un precio 
 
 | Prioridad | Mejora | Esfuerzo | Impacto |
 |-----------|--------|----------|---------|
-| 1 | CI GitHub Actions (pytest + flutter analyze) | S | Alto |
-| 2 | Intervalos de credibilidad (HDI 90%) | M | Alto |
-| 3 | Tests de widget Flutter | M | Medio |
-| 4 | Docker Compose para dev local | M | Medio |
-| 5 | R-hat/ESS en respuesta + alerta de no convergencia | M | Alto |
-| 6 | Splines bayesianos | L | Alto |
-| 7 | Endpoint elasticidad puntual | S | Medio |
-| 8 | Modelo log-log (`model_type="loglog"`) | S | Medio |
-| 9 | Datasets de ejemplo | S | Medio |
-| 10 | Export CSV desde Flutter | M | Bajo |
+| 1 | CI con pytest + ruff + node --check (2) | S | Alto |
+| 2 | Guard de extrapolación en el óptimo (1.2) | S | Alto |
+| 3 | Priors calibrados (1.1) | M | Alto |
+| 4 | R-hat/ESS en la respuesta + alerta en la UI (1.5) | M | Alto |
+| 5 | Intervalos de credibilidad y banda en el gráfico (1.4, 5) | M | Alto |
+| 6 | Recorte de ventas negativas (1.3) | S | Medio |
+| 7 | Dockerfile + compose (3) | M | Medio |
+| 8 | Modelo log-log (1.6) | S | Medio |
+| 9 | Tests unitarios del JS con `node --test` (5) | M | Medio |
+| 10 | Datasets de ejemplo (6) | S | Medio |
+| 11 | Cola de trabajos y rate limiting (4) | L | Medio |
+| 12 | Splines bayesianos (1.7) | L | Alto |
