@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # The lockfile is the contract: if it does not match pyproject.toml, fail
+      # instead of silently resolving something else.
+      - name: Install the project from the lockfile
+        run: uv sync --locked
+
+      # Guard: without it, a matrix leg could quietly test the version pinned in
+      # .python-version and report coverage it never checked.
+      - name: Check the Python version under test
+        run: uv run python -c "import sys; assert sys.version.startswith('${{ matrix.python-version }}'), sys.version"
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Tests
+        run: uv run pytest -q
+
+      - name: Integration test (real PyMC sampler)
+        run: uv run pytest -q -m integration
+
+      # node is preinstalled on ubuntu-latest runners.
+      - name: Check the browser script
+        run: node --check price_optimizer/static/app.js
