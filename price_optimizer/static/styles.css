@@ -7,6 +7,7 @@
   --accent: #2563eb;
   --accent-soft: #dbeafe;
   --chart-line: #2563eb;
+  --chart-band: #93c5fd;
   --chart-grid: #cbd5e1;
   --chart-points: #f97316;
   --chart-optimum: #dc2626;
@@ -34,6 +35,10 @@ button:disabled { cursor: wait; opacity: .65; }
 .loading { color: var(--accent); margin: .4rem 0 0; }
 .empty-state { color: var(--muted); padding: 2rem 0; text-align: center; }
 .error-banner { background: #fee2e2; border: 1px solid #fecaca; color: var(--error); margin-bottom: 1rem; padding: .7rem; border-radius: .3rem; }
+.convergence-banner { background: #dcfce7; border: 1px solid #bbf7d0; color: #166534; margin-bottom: 1rem; padding: .7rem; border-radius: .3rem; }
+.convergence-banner.warning { background: #fef3c7; border-color: #fde68a; color: #92400e; }
+.warnings-banner { background: #fef3c7; border: 1px solid #fcd34d; color: #92400e; margin-bottom: 1rem; padding: .7rem; border-radius: .3rem; }
+.warnings-banner ul { margin: 0; padding-left: 1.25rem; }
 .model-summary { color: var(--muted); margin-top: 0; }
 .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: .7rem; }
 .kpi { background: var(--accent-soft); border-radius: .35rem; padding: .75rem; }
@@ -44,6 +49,7 @@ button:disabled { cursor: wait; opacity: .65; }
 .gridline { stroke: var(--chart-grid); stroke-width: 1; }
 .axis { stroke: var(--ink); stroke-width: 1.2; }
 .axis-text, .axis-label { fill: var(--muted); font-size: 12px; }
+.revenue-band { fill: var(--chart-band); opacity: .38; }
 .revenue-line { stroke: var(--chart-line); stroke-width: 3; }
 .observation-point { fill: var(--chart-points); }
 .optimal-line { stroke: var(--chart-optimum); stroke-dasharray: 6 4; stroke-width: 2; }

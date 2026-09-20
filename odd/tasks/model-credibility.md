@@ -1,6 +1,6 @@
 # ODD · Credibilidad del modelo
 
-**Estado:** en curso · **Fecha:** 2026-09-20 · **Rama:** `main` (commits por unidad de trabajo)
+**Estado:** en curso · **Fecha:** 2026-09-20 · **Rama:** `feat/model-credibility` (commits por unidad de trabajo)
 
 ## Objetivo
 
@@ -37,33 +37,33 @@ en vez de devolver un punto sin contexto.
 
 ### WU1 · Modelo
 
-- [ ] **T1** `_data_scale()` (desvío con piso) y priors calibrados:
+- [x] **T1** `_data_scale()` (desvío con piso) y priors calibrados:
   `intercepto ~ Normal(mu=mean(ventas), sigma=2·escala_ventas)`,
   `pendiente ~ Normal(mu=0, sigma=3·escala_ventas/escala_precio)`,
   `beta_k ~ Normal(mu=0, sigma=3·escala_ventas/escala_precio^k)`,
   `sigma_ventas ~ HalfNormal(sigma=escala_ventas)`. Precio centrado en su media dentro del modelo.
-- [ ] **T2** HDI 90% de ventas e ingresos por punto del grid, desde las muestras por draw.
-- [ ] **T3** Diagnósticos: `rhat` y `ess` por parámetro, `max_rhat`, `min_ess`, `converged`, con
+- [x] **T2** HDI 90% de ventas e ingresos por punto del grid, desde las muestras por draw.
+- [x] **T3** Diagnósticos: `rhat` y `ess` por parámetro, `max_rhat`, `min_ess`, `converged`, con
   umbrales como constantes de módulo y `NaN → None`.
-- [ ] **T4** Avisos: óptimo en el borde del grid; recorte de ventas a cero (con la cantidad de puntos);
+- [x] **T4** Avisos: óptimo en el borde del grid; recorte de ventas a cero (con la cantidad de puntos);
   no convergencia (R-hat alto, ESS bajo); R-hat no calculable por falta de cadenas.
-- [ ] **T5** `arviz` a dependencias de runtime + `uv lock`.
-- [ ] **T6** Tests: fixtures a **2 cadenas** (con 1, `az.rhat` da `nan` y el caso no se prueba),
+- [x] **T5** `arviz` a dependencias de runtime + `uv lock`.
+- [x] **T6** Tests: fixtures a **2 cadenas** (con 1, `az.rhat` da `nan` y el caso no se prueba),
   recorte y su aviso, óptimo de borde, HDI con largo y monotonía (`low <= media <= high`),
   `converged` falso con una traza mal mezclada, y `_data_scale` con datos degenerados.
 
 ### WU2 · API
 
-- [ ] **T7** Campos nuevos en la respuesta: `expected_sales_hdi_low/_high`,
+- [x] **T7** Campos nuevos en la respuesta: `expected_sales_hdi_low/_high`,
   `expected_revenue_hdi_low/_high`, `diagnostics` (`rhat`, `ess`, `max_rhat`, `min_ess`, `converged`),
   `warnings`. `NaN → null` en el serializado. Tests del contrato nuevo y de que el request no cambió.
 
 ### WU3 · UI y documentación
 
-- [ ] **T8** UI: banda de incertidumbre (HDI 90%) detrás de la línea de ingresos, columnas de rango en
+- [x] **T8** UI: banda de incertidumbre (HDI 90%) detrás de la línea de ingresos, columnas de rango en
   la tabla, avisos visibles (ámbar, no rojo) y etiquetas legibles para los parámetros
   (`intercepto` → "Ventas al precio promedio", `pendiente` → "Elasticidad (pendiente)", etcétera).
-- [ ] **T9** README y RECOMENDACIONES: reescribir «Límites que conocemos» (los priors ya no sesgan;
+- [x] **T9** README y RECOMENDACIONES: reescribir «Límites que conocemos» (los priors ya no sesgan;
   los nuevos límites son los umbrales de convergencia, la definición de HDI y el recorte), marcar
   hechos los ítems 1.1 a 1.5 y **regenerar la captura**, porque el gráfico y los números cambian.
 - [ ] **T10** Verificación independiente (`gentle-ai-verify`).
@@ -72,6 +72,11 @@ en vez de devolver un punto sin contexto.
 **Superficies de escritura:** `price_optimizer/model.py`, `price_optimizer/api.py`,
 `price_optimizer/static/**`, `tests/**`, `pyproject.toml`, `uv.lock`, `README.md`,
 `RECOMENDACIONES.md`, `docs/screenshot.png`, `odd/**`.
+
+## Defectos encontrados durante la revisión
+
+- `az.hdi` recibía un array 2-D ambiguo; ahora la llamada nombra explícitamente sus dimensiones para evitar la reinterpretación anunciada por ArviZ.
+- PyMC recomendó cuatro cadenas para diagnósticos confiables; el sampler ahora solicita cuatro cadenas.
 
 ## Verificación
 

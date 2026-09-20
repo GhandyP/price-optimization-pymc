@@ -19,15 +19,16 @@ escucha.
 Con los diez datos de ejemplo que trae el formulario, una corrida real devuelve:
 
 ```
-Precio óptimo:            22.37
-Ingreso esperado:       1355.60
-Elasticidad (pendiente): -2.687
-Tiempo de inferencia:    ~21 s en 4 núcleos (draws=500, tune=200)
+Precio óptimo:            22.12
+Ingreso esperado:       1355.71
+Intervalo HDI 90%:   1312.14 – 1398.96
+Elasticidad (pendiente): -2.756
+Convergencia:              sí (R-hat máx 1.002, ESS mín 3510)
+Tiempo de inferencia:    ~21 s en 4 núcleos (draws=2000, tune=1000)
 ```
 
 El muestreo es estocástico: los números cambian entre corridas. Lo que importa es el orden de
-magnitud, que el óptimo caiga dentro del rango analizado y que el intervalo de credibilidad (todavía
-no expuesto, ver `RECOMENDACIONES.md`) sea razonable.
+magnitud, que el óptimo caiga dentro del rango analizado y que la convergencia sea confiable.
 
 ---
 
@@ -38,16 +39,16 @@ externo. El gráfico se dibuja en el navegador como SVG a partir del JSON de la 
 
 ![Interfaz de optimización de precios: formulario de datos históricos y modelo a la izquierda, y a la derecha los KPI, el gráfico de ingresos por precio, la tabla de parámetros posteriores y la tabla de ingresos](docs/screenshot.png)
 
-*Captura real de la app con los diez datos de ejemplo, `draws=500` y `tune=200`: precio óptimo 22,37 e
-ingreso esperado 1.355,75. Los decimales cambian entre corridas porque el muestreo es estocástico.*
+*Captura real de la app con las diez filas de ejemplo, `draws=500` y `tune=200`. Los valores cambian
+entre corridas porque el muestreo es estocástico.*
 
 La página:
 
 - **Valida antes de enviar**, con los mismos límites que el backend, así que un dato fuera de rango da
   un mensaje claro en el formulario en vez de un `422` crudo de la API.
 - Muestra los KPI (precio óptimo, ingreso esperado y, en el modelo lineal, la pendiente estimada).
-- Dibuja la curva de ingresos esperados, los puntos observados y una línea punteada en el óptimo.
-- Devuelve la tabla de parámetros posteriores y la tabla precio / ventas / ingresos de todo el grid.
+- Dibuja la curva de ingresos esperados, su banda HDI 90%, los puntos observados y una línea punteada en el óptimo.
+- Devuelve la tabla de parámetros posteriores y la tabla precio / ventas / ingresos, con su intervalo HDI 90%, de todo el grid.
 - No hace ninguna petición a un CDN: se puede mostrar sin internet.
 
 ## 2. API HTTP
@@ -79,20 +80,22 @@ curl -X POST http://127.0.0.1:8000/optimise \
 
 ### 2.2 Respuesta
 
-Salida real de la corrida del request anterior (arrays truncados a tres valores de los 100 del grid):
+Salida real de una corrida del ejemplo de diez filas (arrays truncados a tres valores de los 100 del grid):
 
 ```json
 {
-  "price_grid": [10.0, 10.202020202020202, 10.404040404040405, "… 100 puntos …"],
-  "expected_sales": [91.59520227330843, 91.09318326414395, 90.5911642549794, "…"],
-  "expected_revenue": [915.9520227330843, 929.3344959271251, 942.5141331578666, "…"],
-  "optimal_price": 23.333333333333336,
-  "optimal_expected_revenue": 1364.1121122638792,
-  "parameter_means": {
-    "intercepto": 116.44514322695069,
-    "pendiente": -2.4849940953642298,
-    "sigma_ventas": 7.7220184334624316
-  },
+  "price_grid": [10.0, 10.252525252525253, 10.505050505050505, "… 100 puntos …"],
+  "expected_sales": [94.69260160800098, 93.99661750551593, 93.3006334030304, "…"],
+  "expected_sales_hdi_low": [91.18182249474964, 90.54063615378145, 89.89389109222223, "…"],
+  "expected_sales_hdi_high": [98.23378951988227, 97.4854147509556, 96.7344632935181, "…"],
+  "expected_revenue": [946.9260160800053, 963.7026946272523, 980.1278660520375, "…"],
+  "expected_revenue_hdi_low": [911.8182249474964, 928.2701585463452, 944.3398660193043, "…"],
+  "expected_revenue_hdi_high": [982.3378951988227, 999.47167648707, 1016.2004224773619, "…"],
+  "optimal_price": 22.12121212121212,
+  "optimal_expected_revenue": 1355.7065522045827,
+  "parameter_means": {"intercepto": 62.99748558081465, "pendiente": -2.756097045842298, "sigma_ventas": 3.6523089872207137},
+  "diagnostics": {"max_rhat": 1.0020976510244064, "min_ess": 3509.901517339148, "converged": true, "rhat": {"intercepto": 1.0021, "pendiente": 1.0013, "sigma_ventas": 1.0010}, "ess": {"intercepto": 4541.59, "pendiente": 6189.86, "sigma_ventas": 3509.90}},
+  "warnings": [],
   "model_type": "linear",
   "degree": 2
 }
@@ -133,39 +136,34 @@ El timeout es una constante de módulo en `price_optimizer/api.py`; para cambiar
 
 Regresión bayesiana de `ventas` contra `precio`, con dos formas funcionales:
 
-- **Lineal** (default): `ventas ~ Normal(intercepto + pendiente · precio, sigma_ventas)`. La pendiente
+- **Lineal** (default): `ventas ~ Normal(intercepto + pendiente · (precio - precio_promedio), sigma_ventas)`. La pendiente
   es la elasticidad y es constante en todo el rango.
-- **Polinómico**: `ventas ~ Normal(intercepto + Σ beta_k · precio^k, sigma_ventas)` para capturar
+- **Polinómico**: `ventas ~ Normal(intercepto + Σ beta_k · (precio - precio_promedio)^k, sigma_ventas)` para capturar
   curvatura. El grado se valida contra la cantidad de observaciones para evitar sobreajuste.
 
 | Parámetro       | Prior                                                                 |
 |-----------------|-----------------------------------------------------------------------|
-| `intercepto`    | `Normal(mu = max(ventas observadas), sigma = max(desvío de ventas, 10))` |
-| `pendiente`     | `Normal(mu = -1, sigma = 1)`                                          |
-| `beta_k`        | `Normal(mu = 0, sigma = 1)` para `k = 1..grado` (solo polinómico)     |
-| `sigma_ventas`  | `HalfNormal(sigma = max(desvío de ventas, 5))`                        |
+| `intercepto`    | Normal centrada en la media de ventas y escalada a los datos |
+| `pendiente`     | Normal débilmente informativa centrada en 0                 |
+| `beta_k`        | Normal débilmente informativa centrada en 0 (solo polinómico) |
+| `sigma_ventas`  | HalfNormal escalada a la dispersión de ventas                |
 
-Se infiere con NUTS usando las **dos cadenas por defecto de PyMC** (`pm.sample`), se promedia la
-posterior sobre el grid de precios y se toma el `argmax` de `precio · ventas_esperadas`.
+Se infiere con NUTS usando **cuatro cadenas** (`pm.sample`), se promedia la posterior sobre el grid de
+precios y se toma el `argmax` de `precio · ventas_esperadas`.
 
 ### 3.1 Límites que conocemos
 
-- El prior de `pendiente` es **estrecho** (`mu = -1, sigma = 1`) frente a elasticidades reales: con
-  pocos datos domina la posterior y sesga la pendiente hacia valores débiles. Con el dataset de
-  ejemplo estima `-2.69`, a más de 1.5 desvíos del prior.
-- El grid automático **solo cubre el rango observado**: si el máximo real de ingresos está fuera de
-  ese rango, el resultado cae en el borde del grid y hoy no se avisa. Verificá que el precio óptimo no
-  sea el primero ni el último punto de `price_grid`.
-- La respuesta **no incluye diagnósticos de convergencia**. PyMC los escribe en el log del servidor
-  (por ejemplo `rhat statistic is larger than 1.01`), pero no viajan al cliente.
-- Con el modelo polinómico, `expected_sales` puede volverse **negativa** a precios altos: no se recorta.
-- El `intercepto` tiene un prior dependiente de los datos (`mu = max(ventas)`) y se interpreta a
-  `precio = 0`, que suele estar lejos del rango analizado.
+- Los umbrales de convergencia son convenciones elegidas: R-hat máximo `1.01` y ESS mínimo `100`.
+- El intervalo mostrado es un HDI del 90%, no una garantía frecuentista de cobertura.
+- Las ventas esperadas negativas se recortan a cero antes de calcular ingresos.
+- `intercepto` significa ventas esperadas al precio promedio observado.
+- El muestreo usa cuatro cadenas, por lo que cada request cuesta aproximadamente el doble de CPU que
+  el default anterior de dos cadenas.
 
 ## 4. Tests
 
 ```bash
-uv run pytest -q                    # 41 tests rápidos: no corren el sampler real
+uv run pytest -q                    # 51 tests rápidos: no corren el sampler real
 uv run pytest -q -m integration     # el sampler real de PyMC de punta a punta
 uv run ruff check .                 # lint (line-length 120)
 node --check price_optimizer/static/app.js   # sintaxis del JS (opcional, requiere node)
@@ -252,9 +250,9 @@ Uvicorn 0.53.0, Pydantic 2.13.5. Requiere Python `>=3.11,<3.13` (uv instala 3.11
   botella real es la concurrencia: cada request compila y muestrea sin queue.
 - **Sin Dockerfile.** El CI corre en cada push, pero no hay imagen de contenedor ni despliegue
   reproducible fuera de `uv`.
-- **Sin diagnósticos de convergencia en la respuesta.** Un usuario puede tomar decisiones con cadenas
-  mal mezcladas sin enterarse: hoy el aviso queda solo en el log del servidor.
-- **El óptimo puede caer en el borde del grid.** Ver §3.1.
+- **Los diagnósticos de convergencia son convenciones.** R-hat máximo 1.01 y ESS mínimo 100 son
+  umbrales prácticos, no una garantía de inferencia correcta.
+- **El óptimo puede caer en el borde del grid.** La API lo advierte; ver §3.1.
 - **Sin persistencia.** El servicio es stateless: no guarda historial de optimizaciones.
 - **El timeout no cancela el sampler.** A los 120 s `asyncio.wait_for` devuelve 504, pero el hilo que
   está muestreando sigue ocupando CPU hasta terminar (`asyncio.to_thread` no es cancelable). Un cliente

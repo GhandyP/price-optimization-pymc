@@ -37,6 +37,12 @@ def test_javascript_element_lookups_exist_in_html():
     assert '/static/app.js' in html
 
 
+def test_javascript_consumes_uncertainty_diagnostics_and_warnings():
+    javascript = (STATIC_DIR / "app.js").read_text()
+    for field in ("expected_revenue_hdi_low", "expected_revenue_hdi_high", "diagnostics", "warnings"):
+        assert field in javascript
+
+
 def test_static_assets_do_not_reference_external_hosts():
     html = (STATIC_DIR / "index.html").read_text()
     javascript = (STATIC_DIR / "app.js").read_text()

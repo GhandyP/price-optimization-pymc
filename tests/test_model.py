@@ -119,6 +119,8 @@ def test_run_price_optimization_integration_small_dataset():
     ]
     result = optimizer.run_price_optimization(observations, draws=20, tune=20, target_accept=0.8)
     assert isinstance(result, optimizer.PriceOptimizationResult)
+    convergence_warning = any("converg" in warning.lower() for warning in result.warnings)
+    assert convergence_warning is (not result.diagnostics["converged"])
     assert len(result.price_grid) == len(result.expected_sales) == len(result.expected_revenue)
     assert result.optimal_expected_revenue == pytest.approx(max(result.expected_revenue))
     assert min(result.price_grid) <= result.optimal_price <= max(result.price_grid)
@@ -170,6 +172,7 @@ def test_hdi_matches_independent_one_dimensional_grid_columns(sample_observation
         assert result.expected_sales_hdi_high[index] == pytest.approx(expected_interval[1])
 
 
+@pytest.mark.filterwarnings("ignore::RuntimeWarning")
 def test_badly_mixed_trace_is_not_converged(sample_observations, patch_sample):
     bad_trace = az.from_dict(
         posterior={
@@ -179,11 +182,16 @@ def test_badly_mixed_trace_is_not_converged(sample_observations, patch_sample):
         }
     )
     patch_sample(bad_trace)
-    result = optimizer.run_price_optimization(sample_observations, price_grid=[9, 10, 11, 12, 13, 14], draws=10, tune=10)
+    # ArviZ warns while computing diagnostics for this intentionally degenerate trace.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        result = optimizer.run_price_optimization(sample_observations, price_grid=[9, 10, 11, 12, 13, 14], draws=10, tune=10)
     assert result.diagnostics["converged"] is False
     assert any("R-hat" in warning or "muestras efectivas" in warning for warning in result.warnings)
 
 
+# These fixtures intentionally have zero within-chain variance for diagnostics.
+@pytest.mark.filterwarnings("ignore::RuntimeWarning")
 def test_polynomial_draws_are_clipped_before_means_and_revenue(sample_observations, patch_sample):
     trace = az.from_dict(
         posterior={
@@ -202,6 +210,7 @@ def test_polynomial_draws_are_clipped_before_means_and_revenue(sample_observatio
     assert "Se recortaron ventas esperadas negativas en 1 punto(s) del grid." in result.warnings
 
 
+@pytest.mark.filterwarnings("ignore::RuntimeWarning")
 def test_boundary_warning_only_applies_at_grid_edge(sample_observations, patch_sample):
     patch_sample()
     edge = optimizer.run_price_optimization(sample_observations, price_grid=[9, 10, 11, 12, 13, 14], draws=10, tune=10)
