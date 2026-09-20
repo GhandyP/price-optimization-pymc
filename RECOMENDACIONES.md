@@ -20,33 +20,36 @@
 ## 1. Modelo (prioridad alta)
 
 ### 1.1 Priors calibrados — ✅ Hecho
-El prior de la pendiente es `Normal(mu = -1, sigma = 1)` mientras que en el dataset de ejemplo la
-posterior queda en `-2.69`: más de 1.5 desvíos del prior. Con 3 a 30 observaciones el prior domina y
-**sesga la elasticidad hacia valores débiles**, lo que a su vez mueve el precio óptimo. Opciones:
-priors débilmente informativos en la escala de los datos (o log-log), o `pm.Horseshoe` para los
-coeficientes polinómicos, que es regularización bayesiana estilo lasso.
+Antes de este cambio, el prior de la pendiente estaba centrado en -1 con sigma 1 y la posterior quedaba
+en `-2.69`, a más de 1.5 desvíos del prior. Con 3 a 30 observaciones, ese prior podía dominar y
+**sesgar la elasticidad hacia valores débiles**, moviendo a su vez el precio óptimo. Se implementaron
+priors débilmente informativos escalados con `_data_scale`, el precio se centró en su media y
+`intercepto` pasó a significar las ventas esperadas al precio observado promedio. En el ejemplo de
+diez filas de la app, la pendiente posterior ahora es `-2.7614`, frente a `-2.7613` por mínimos
+cuadrados ordinarios; en un dataset de tres puntos, la diferencia es aproximadamente `+0.19` porque
+hay poca información.
 
 ### 1.2 Guard de extrapolación en el óptimo — ✅ Hecho
-El grid automático cubre solo el rango observado. Si el máximo real de ingresos está fuera de ese
-rango, el `argmax` cae en el borde y el resultado se reporta como si fuera un óptimo interior.
-Devolver una advertencia explícita cuando `optimal_price` es el primero o el último punto del grid.
-Es la mejora con mejor relación credibilidad/esfuerzo: hoy la API puede devolver un óptimo de borde en
-silencio.
+Antes de este cambio, el grid automático cubría solo el rango observado. Si el máximo real de ingresos
+quedaba fuera de ese rango, el `argmax` caía en el borde y el resultado se reportaba como si fuera un
+óptimo interior. Ahora se devuelve una advertencia explícita cuando `optimal_price` es el primero o
+el último punto del grid, para que un óptimo de borde no pase inadvertido.
 
 ### 1.3 Recorte de ventas esperadas negativas — ✅ Hecho
-Con el modelo polinómico, `expected_sales` puede volverse negativa a precios altos y los ingresos
-"esperados" siguen esa negatividad. Recortar en 0 (o modelar la demanda en escala log) antes de
-calcular ingresos.
+Antes de este cambio, con el modelo polinómico `expected_sales` podía volverse negativa a precios
+altos y los ingresos "esperados" seguían esa negatividad. Ahora las ventas esperadas se recortan en 0
+antes de calcular los ingresos.
 
 ### 1.4 Intervalos de credibilidad (HDI 90%) — ✅ Hecho
-El modelo devuelve medias posteriores, pero la incertidumbre es el valor agregado del enfoque
-bayesiano. Devolver cuantiles para `expected_sales` y `expected_revenue` permitiría dibujar bandas de
-incertidumbre en el gráfico, no solo una línea y un punto.
+Antes de este cambio, el modelo devolvía medias posteriores sin cuantificar la incertidumbre. Ahora
+devuelve intervalos HDI del 90% para `expected_sales` y `expected_revenue`, que permiten dibujar
+bandas de incertidumbre en el gráfico además de la línea y el punto.
 
 ### 1.5 Diagnósticos de convergencia en la respuesta — ✅ Hecho
-Hoy PyMC escribe `rhat statistic is larger than 1.01` en el log del servidor y nadie se entera.
-Exponer R-hat y ESS por parámetro (`az.summary`) y mostrar una advertencia visible en la UI cuando no
-convergió. Sin esto, un usuario puede decidir precios con cadenas mal mezcladas.
+Antes de este cambio, PyMC escribía `rhat statistic is larger than 1.01` en el log del servidor y
+nadie se enteraba. Ahora la respuesta expone R-hat y ESS por parámetro y muestra una advertencia
+visible en la UI cuando el muestreo no convergió, para evitar decisiones de precios con cadenas mal
+mezcladas.
 
 ### 1.6 Modelo log-log (`model_type="loglog"`)
 Alternativa simple al polinomio: `log(ventas) ~ log(precio)`. El coeficiente es **directamente** la
