@@ -66,8 +66,8 @@ en vez de devolver un punto sin contexto.
 - [x] **T9** README y RECOMENDACIONES: reescribir «Límites que conocemos» (los priors ya no sesgan;
   los nuevos límites son los umbrales de convergencia, la definición de HDI y el recorte), marcar
   hechos los ítems 1.1 a 1.5 y **regenerar la captura**, porque el gráfico y los números cambian.
-- [ ] **T10** Verificación independiente (`gentle-ai-verify`).
-- [ ] **T11** Review nativo del delta y reporte final.
+- [x] **T10** Verificación independiente (`gentle-ai-verify`).
+- [x] **T11** Review nativo del delta y reporte final.
 
 **Superficies de escritura:** `price_optimizer/model.py`, `price_optimizer/api.py`,
 `price_optimizer/static/**`, `tests/**`, `pyproject.toml`, `uv.lock`, `README.md`,
@@ -101,3 +101,29 @@ en vez de devolver un punto sin contexto.
   convenciones; quedan como constantes visibles y documentadas.
 - **Carga de revisión.** Tres unidades y una captura nueva: conviene revisar por tramos, con el mismo
   criterio aprendido en la feature anterior (base-ref al recibo anterior, no al origen).
+
+## Cierre
+
+- **Verificación independiente**: pass-with-findings. Confirmó con corridas propias que la pendiente
+  posterior coincide con mínimos cuadrados a 0,0002 en el ejemplo de diez filas de la app (−2,7614
+  contra −2,7613), que los intervalos HDI coincidieron exactamente contra un cálculo independiente
+  punto por punto, y que el recorte reporta la cuenta correcta. Dos hallazgos: la descripción stale
+  del prior en RECOMENDACIONES (resuelta en `490fb05`) y la falta de un test del caso de una sola
+  cadena (resuelta en `9cded2b`).
+- **Review nativo**: linaje `review-415ba7d88f770979`, tier medium, lente consolidada
+  `review-reliability`, 15 archivos y 757 líneas. Resultado: **approved**, autoridad quemada con
+  `gentle-ai.review-acknowledged/v1`. Hallazgo informativo `R3-001` (fiabilidad,
+  `price_optimizer/model.py:173-175`, WARNING): no bloqueante, no reabre el review, se trata como
+  trabajo posterior.
+- **Un intento anterior quedó escalado y fue superado**: el linaje `review-f4bf8b3cedb3bc25` emitió
+  `R3-hdi-runtime-error` con causalidad desconocida y quedó detenido. El error no se reprodujo en 10
+  corridas reales (datasets degenerados y escalas extremas), y la respuesta de fondo fue el
+  endurecimiento `6d3849e`: si los intervalos o los diagnósticos fallan, el resultado sobrevive con un
+  aviso en vez de perderse. El linaje escalado queda como registro histórico.
+- **Commits de la feature** (sobre `738a3d7`): `ad97589` modelo, `329ecab` API, `4677b66` UI y docs,
+  `9cded2b` test de una cadena, `490fb05` doc stale, `6d3849e` endurecimiento, más este commit de
+  cierre del plan.
+- **Suite**: 54 tests rápidos + 1 de integración con el sampler real, `ruff` limpio, `node --check`
+  OK, dos warnings de terceros (starlette/anyio).
+- **Entrega**: rama `feat/model-credibility` publicada como pull request; el merge queda como
+  decisión del usuario.
